@@ -1,0 +1,25 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+env/
+.env
+
+# Trained model artefacts (regenerate with `python training/train_rice.py`)
+models/*.h5
+models/*.keras
+models/*.pt
+models/*.onnx
+!models/.gitkeep
+
+# Local data caches
+data/raw/
+data/processed/
+*.tar.gz
+*.zip
+
+# FastAPI runtime
+*.log
+.DS_Store

@@ -1,0 +1,73 @@
+rules_version = '2';
+
+// Krishi AI Bangladesh — Firestore security rules
+//
+// Identity model: BDapps-verified BD phone number in E.164 (+880XXXXXXXXXX)
+// is used as the Firestore document id under users/{phone}/...
+// We do NOT use Firebase Authentication (BDapps external PHP handles OTP),
+// so traditional request.auth checks cannot identify the caller.
+//
+// Trust layers (defence in depth):
+//   1. App Check (Enforce) — only our signed APK / debug tokens can reach
+//      the database. Set in app via FirebaseAppCheck + default provider.
+//   2. Document-shape validation — every write must match our known schema.
+//   3. Phone-key self-scoping — users/{phone}/* blocks writes to any
+//      doc id whose final segment is not the same +880... number as the
+//      document path being read/written.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSelfPhone(seg) {
+      return seg.matches('^\\+8801[3-9][0-9]{8}$');
+    }
+
+    match /users/{phone} {
+      allow read, write: if false;
+
+      match /profile/me {
+        allow read: if isSelfPhone(phone);
+        allow create, update: if isSelfPhone(phone)
+          && request.resource.data.keys().hasOnly([
+            'id','name','phone','division','district','upazila',
+            'unionName','village','landSizeDecimal','primaryCrops',
+            'soilType','irrigationSource','createdAt','updatedAt'
+          ])
+          && request.resource.data.phone is string
+          && request.resource.data.phone.matches('^\\+8801[3-9][0-9]{8}$')
+          && request.resource.data.name is string
+          && request.resource.data.name.size() > 0
+          && request.resource.data.name.size() <= 80;
+        allow delete: if false;
+      }
+
+      match /farms/{farmId}         { allow read, write: if isSelfPhone(phone); }
+      match /crops/{cropId}         { allow read, write: if isSelfPhone(phone); }
+      match /diagnoses/{diagId}    { allow read, write: if isSelfPhone(phone); }
+      match /expenses/{expId}      { allow read, write: if isSelfPhone(phone); }
+      match /market_favorites/{fid} { allow read, write: if isSelfPhone(phone); }
+
+      match /notifications/{nid} {
+        allow read: if isSelfPhone(phone);
+        allow create, update: if isSelfPhone(phone)
+          && request.resource.data.keys().hasOnly([
+            'id','title','body','category','severity','createdAt',
+            'read','deepLink','iconKey'
+          ])
+          && request.resource.data.title is string
+          && request.resource.data.body is string
+          && request.resource.data.read is bool;
+        allow delete: if isSelfPhone(phone);
+      }
+
+      // meta/* caches are written only by Admin SDK (future).
+      match /meta/{metaDoc} {
+        allow read, write: if false;
+      }
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

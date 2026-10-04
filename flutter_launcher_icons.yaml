@@ -1,0 +1,9 @@
+flutter_launcher_icons:
+  android: "launcher_icon"
+  ios: true
+  image_path: "assets/app_logo.png"
+  remove_alpha_ios: true
+  
+  # অ্যান্ড্রোয়েডের জন্য অ্যাডাপ্টিভ আইকন কনফিগারেশন
+  adaptive_icon_background: "#FFFFFF" # আপনার পছন্দের ব্যাকগ্রাউন্ড কালার কোড (যেমন সাদা)
+  adaptive_icon_foreground: "assets/app_logo.png" # এখানে আপনার লোগোর পাথ দিন
