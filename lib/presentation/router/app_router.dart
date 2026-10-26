@@ -105,6 +105,17 @@ GoRouter buildRouter(Ref ref) {
           GoRoute(path: '/profile', builder: (_, _) => const ProfileScreen()),
         ],
       ),
+      // Static /farm/* routes must come before '/farm/:id' or the id route
+      // swallows them (e.g. '/farm/add' opening a farm with id 'add').
+      GoRoute(path: '/farm/add', builder: (_, _) => const AddFarmScreen()),
+      GoRoute(
+        path: '/farm/add-crop',
+        builder: (_, state) {
+          final extra = state.extra;
+          final farmId = extra is Map ? extra['farmId'] as String? : null;
+          return AddCropScreen(farmId: farmId);
+        },
+      ),
       GoRoute(path: '/farm/crops', builder: (_, _) => const MyCropsScreen()),
       GoRoute(
         path: '/farm/crops/:id',
@@ -120,15 +131,6 @@ GoRouter buildRouter(Ref ref) {
         path: '/farm/crop/:id',
         builder: (_, state) =>
             CropDetailScreen(cropId: state.pathParameters['id']!),
-      ),
-      GoRoute(path: '/farm/add', builder: (_, _) => const AddFarmScreen()),
-      GoRoute(
-        path: '/farm/add-crop',
-        builder: (_, state) {
-          final extra = state.extra;
-          final farmId = extra is Map ? extra['farmId'] as String? : null;
-          return AddCropScreen(farmId: farmId);
-        },
       ),
       GoRoute(path: '/ai/scan', builder: (_, _) => const CropDoctorScreen()),
       GoRoute(

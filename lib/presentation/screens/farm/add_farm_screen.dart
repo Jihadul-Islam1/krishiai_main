@@ -8,6 +8,7 @@ import 'package:uuid/uuid.dart';
 
 import '../../../core/constants/app_strings.dart';
 import '../../../core/services/remote_image_storage.dart';
+import '../../../core/services/user_photo_upload.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/utils/date_utils.dart';
@@ -66,17 +67,11 @@ class _AddFarmScreenState extends ConsumerState<AddFarmScreen> {
         _uploadingPhoto = true;
       });
 
-      // Upload to Cloudinary under a phone-scoped folder so the same
-      // verified number always sees the same picture on any device.
-      final store = await ref.read(localStoreProvider.future);
-      final phone = store.phoneKey ?? 'anon';
-      final storage = ref.read(imageStorageProvider);
+      // Upload to ImgBB; the photo is recorded under users/{phone}/photos so
+      // the same verified number always sees the same pictures anywhere.
       final bytes = await File(xfile.path).readAsBytes();
-      final url = await storage.uploadBytes(
-        bytes,
-        filename: 'farm_${DateTime.now().millisecondsSinceEpoch}.jpg',
-        folder: 'krishiai/$phone/farms',
-      );
+      final image = await uploadUserPhoto(ref, bytes, kind: 'farm');
+      final url = image.url;
       if (!mounted) return;
       setState(() {
         _photoRemoteUrl = url;
@@ -92,7 +87,7 @@ class _AddFarmScreenState extends ConsumerState<AddFarmScreen> {
         SnackBar(
           content: Text(
             'ছবি আপলোড ব্যর্থ: ${e.message}\n'
-            '.env-এ CLOUDINARY_CLOUD_NAME ও CLOUDINARY_UPLOAD_PRESET আছে কিনা দেখুন।',
+            '.env-এ IMGBB_API_KEY আছে কিনা দেখুন।',
           ),
           duration: const Duration(seconds: 6),
         ),
@@ -356,7 +351,7 @@ class _AddFarmScreenState extends ConsumerState<AddFarmScreen> {
 
 /// Preview tile for the picked + uploaded farm photo. While the upload
 /// is still running we show the local file with a spinner overlay; once
-/// Cloudinary returns a URL we just render the remote image.
+/// ImgBB returns a URL we just render the remote image.
 class _PhotoPreview extends StatelessWidget {
   const _PhotoPreview({
     required this.localPath,
@@ -404,7 +399,7 @@ class _PhotoPreview extends StatelessWidget {
                     ),
                     SizedBox(height: 8),
                     Text(
-                      'Cloudinary-তে আপলোড হচ্ছে…',
+                      'ImgBB-তে আপলোড হচ্ছে…',
                       style: TextStyle(color: Colors.white),
                     ),
                   ],
@@ -427,7 +422,7 @@ class _PhotoPreview extends StatelessWidget {
               size: 56, color: AppColors.textSecondary),
           SizedBox(height: 8),
           Text(
-            'ক্যামেরা বা গ্যালারি থেকে ছবি যোগ করুন\n(ঐচ্ছিক — আপলোড Cloudinary-তে)',
+            'ক্যামেরা বা গ্যালারি থেকে ছবি যোগ করুন\n(ঐচ্ছিক — ImgBB-তে সংরক্ষিত হবে)',
             textAlign: TextAlign.center,
             style: TextStyle(color: AppColors.textSecondary),
           ),

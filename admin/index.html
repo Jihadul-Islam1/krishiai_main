@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="bn" dir="ltr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>কৃষি AI — অ্যাডমিন প্যানেল | বাজারদর ম্যানেজমেন্ট</title>
+  <meta name="description" content="Krishi AI Admin Panel — Manage market prices that sync in real-time to the mobile app." />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+Bengali:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- ======================== Auth Gate ======================== -->
+  <div id="auth-gate" class="auth-gate">
+    <div class="auth-card">
+      <div class="auth-logo">
+        <span class="material-icons-round">eco</span>
+      </div>
+      <h1>কৃষি AI অ্যাডমিন</h1>
+      <p class="auth-subtitle">বাজারদর ম্যানেজমেন্ট প্যানেল</p>
+      <div class="auth-field">
+        <label for="admin-pass">অ্যাডমিন পাসওয়ার্ড</label>
+        <div class="input-wrapper">
+          <span class="material-icons-round input-icon">lock</span>
+          <input type="password" id="admin-pass" placeholder="পাসওয়ার্ড দিন..." autocomplete="off" />
+          <button class="toggle-pass" onclick="togglePassVisibility()" title="দেখুন">
+            <span class="material-icons-round" id="pass-eye">visibility_off</span>
+          </button>
+        </div>
+      </div>
+      <button class="btn-primary btn-full" onclick="authenticate()">
+        <span class="material-icons-round">login</span>
+        প্রবেশ করুন
+      </button>
+      <p id="auth-error" class="auth-error" hidden></p>
+    </div>
+  </div>
+
+  <!-- ======================== Main App ======================== -->
+  <div id="app" class="app" hidden>
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <span class="material-icons-round brand-icon">eco</span>
+        <div>
+          <h2>কৃষি AI</h2>
+          <span class="brand-sub">অ্যাডমিন প্যানেল</span>
+        </div>
+      </div>
+      <nav class="sidebar-nav">
+        <a href="#" class="nav-item active" data-section="dashboard" onclick="switchSection('dashboard')">
+          <span class="material-icons-round">dashboard</span>
+          ড্যাশবোর্ড
+        </a>
+        <a href="#" class="nav-item" data-section="products" onclick="switchSection('products')">
+          <span class="material-icons-round">inventory_2</span>
+          পণ্য তালিকা
+        </a>
+        <a href="#" class="nav-item" data-section="add" onclick="switchSection('add')">
+          <span class="material-icons-round">add_circle</span>
+          নতুন পণ্য যোগ
+        </a>
+      </nav>
+      <div class="sidebar-footer">
+        <button class="btn-outline btn-sm" onclick="logout()">
+          <span class="material-icons-round">logout</span>
+          লগ আউট
+        </button>
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main-content">
+      <!-- Top Bar -->
+      <header class="topbar">
+        <button class="menu-toggle" onclick="toggleSidebar()">
+          <span class="material-icons-round">menu</span>
+        </button>
+        <div class="topbar-title">
+          <h1 id="page-title">ড্যাশবোর্ড</h1>
+          <span class="topbar-sub" id="page-subtitle">সকল পণ্যের দাম পরিচালনা</span>
+        </div>
+        <div class="topbar-actions">
+          <span class="sync-badge" id="sync-status">
+            <span class="material-icons-round">cloud_done</span>
+            সিঙ্ক
+          </span>
+        </div>
+      </header>
+
+      <!-- ============ Dashboard Section ============ -->
+      <section id="section-dashboard" class="section">
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-icon bg-green"><span class="material-icons-round">inventory_2</span></div>
+            <div class="stat-info">
+              <span class="stat-value" id="stat-total">0</span>
+              <span class="stat-label">মোট পণ্য</span>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon bg-blue"><span class="material-icons-round">category</span></div>
+            <div class="stat-info">
+              <span class="stat-value" id="stat-categories">0</span>
+              <span class="stat-label">ক্যাটাগরি</span>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon bg-amber"><span class="material-icons-round">trending_up</span></div>
+            <div class="stat-info">
+              <span class="stat-value" id="stat-updated">0</span>
+              <span class="stat-label">আজ আপডেট</span>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon bg-purple"><span class="material-icons-round">schedule</span></div>
+            <div class="stat-info">
+              <span class="stat-value" id="stat-last-update">—</span>
+              <span class="stat-label">সর্বশেষ আপডেট</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Recent products -->
+        <div class="card">
+          <div class="card-header">
+            <h3><span class="material-icons-round">history</span> সাম্প্রতিক আপডেট</h3>
+          </div>
+          <div id="recent-list" class="table-wrap">
+            <p class="empty-msg">লোড হচ্ছে...</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ Products Section ============ -->
+      <section id="section-products" class="section" hidden>
+        <div class="section-toolbar">
+          <div class="search-box">
+            <span class="material-icons-round">search</span>
+            <input type="text" id="search-input" placeholder="পণ্যের নাম খুঁজুন..." oninput="filterProducts()" />
+          </div>
+          <div class="filter-chips" id="category-chips"></div>
+        </div>
+        <div class="card">
+          <div id="products-table" class="table-wrap">
+            <p class="empty-msg">লোড হচ্ছে...</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ Add/Edit Section ============ -->
+      <section id="section-add" class="section" hidden>
+        <div class="card form-card">
+          <h3 id="form-title">
+            <span class="material-icons-round">add_circle</span>
+            নতুন পণ্য যোগ করুন
+          </h3>
+          <form id="product-form" onsubmit="saveProduct(event)">
+            <input type="hidden" id="edit-id" />
+
+            <div class="form-grid">
+              <div class="form-group">
+                <label for="f-cropName">পণ্যের নাম (বাংলা) <span class="req">*</span></label>
+                <div class="input-wrapper">
+                  <span class="material-icons-round input-icon">grass</span>
+                  <input type="text" id="f-cropName" required placeholder="যেমন: আলু, পেঁয়াজ..." />
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="f-id">পণ্য ID (ইংরেজি) <span class="req">*</span></label>
+                <div class="input-wrapper">
+                  <span class="material-icons-round input-icon">badge</span>
+                  <input type="text" id="f-id" required placeholder="যেমন: potato, onion..." pattern="[a-z0-9_]+" title="শুধু ছোট হাতের ইংরেজি, সংখ্যা, আন্ডারস্কোর" />
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="f-category">ক্যাটাগরি <span class="req">*</span></label>
+                <div class="input-wrapper">
+                  <span class="material-icons-round input-icon">category</span>
+                  <select id="f-category" required>
+                    <option value="">— ক্যাটাগরি বাছুন —</option>
+                    <option value="চাল">চাল</option>
+                    <option value="গম">গম</option>
+                    <option value="সবজি">সবজি</option>
+                    <option value="ফল">ফল</option>
+                    <option value="মসলা">মসলা</option>
+                    <option value="ডাল">ডাল</option>
+                    <option value="তেলবীজ">তেলবীজ</option>
+                    <option value="ফসল">ফসল</option>
+                    <option value="মাছ">মাছ</option>
+                    <option value="প্রাণিজ">প্রাণিজ</option>
+                    <option value="দুগ্ধ">দুগ্ধ</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="f-unit">একক <span class="req">*</span></label>
+                <div class="input-wrapper">
+                  <span class="material-icons-round input-icon">straighten</span>
+                  <select id="f-unit" required>
+                    <option value="কেজি">কেজি</option>
+                    <option value="লিটার">লিটার</option>
+                    <option value="ডজন">ডজন</option>
+                    <option value="পিস">পিস</option>
+                    <option value="মণ">মণ</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="f-currentPrice">বর্তমান দাম (৳) <span class="req">*</span></label>
+                <div class="input-wrapper">
+                  <span class="material-icons-round input-icon">payments</span>
+                  <input type="number" id="f-currentPrice" required min="0" step="0.5" placeholder="0.00" />
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="f-previousPrice">আগের দাম (৳)</label>
+                <div class="input-wrapper">
+                  <span class="material-icons-round input-icon">history</span>
+                  <input type="number" id="f-previousPrice" min="0" step="0.5" placeholder="0.00" />
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="f-minPrice">সর্বনিম্ন দাম (৳)</label>
+                <div class="input-wrapper">
+                  <span class="material-icons-round input-icon">arrow_downward</span>
+                  <input type="number" id="f-minPrice" min="0" step="0.5" placeholder="0.00" />
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="f-maxPrice">সর্বোচ্চ দাম (৳)</label>
+                <div class="input-wrapper">
+                  <span class="material-icons-round input-icon">arrow_upward</span>
+                  <input type="number" id="f-maxPrice" min="0" step="0.5" placeholder="0.00" />
+                </div>
+              </div>
+
+              <div class="form-group full-width">
+                <label for="f-market">বাজার</label>
+                <div class="input-wrapper">
+                  <span class="material-icons-round input-icon">storefront</span>
+                  <input type="text" id="f-market" placeholder="যেমন: কাওরান বাজার (খালি রাখলে ইউজারের জেলার বাজার ব্যবহার হবে)" />
+                </div>
+              </div>
+            </div>
+
+            <div class="form-actions">
+              <button type="button" class="btn-outline" onclick="resetForm()">
+                <span class="material-icons-round">close</span>
+                বাতিল
+              </button>
+              <button type="submit" class="btn-primary" id="save-btn">
+                <span class="material-icons-round">save</span>
+                <span id="save-btn-text">সেভ করুন</span>
+              </button>
+            </div>
+          </form>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" class="toast" hidden>
+    <span class="material-icons-round toast-icon" id="toast-icon">check_circle</span>
+    <span id="toast-msg"></span>
+  </div>
+
+  <!-- Confirm Dialog -->
+  <div id="confirm-overlay" class="confirm-overlay" hidden>
+    <div class="confirm-card">
+      <span class="material-icons-round confirm-icon">warning</span>
+      <h3 id="confirm-title">নিশ্চিত করুন</h3>
+      <p id="confirm-msg">এই পণ্যটি মুছে ফেলতে চান?</p>
+      <div class="confirm-actions">
+        <button class="btn-outline" onclick="closeConfirm()">না</button>
+        <button class="btn-danger" id="confirm-yes-btn" onclick="confirmAction()">হ্যাঁ, মুছুন</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Firebase JS SDK (compat for simpler code) -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

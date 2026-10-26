@@ -41,6 +41,10 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
   final _farmSizeCtrl = TextEditingController();
   final _mainCropCtrl = TextEditingController();
   final _experienceCtrl = TextEditingController();
+  final _villageCtrl = TextEditingController();
+  final _soilCtrl = TextEditingController();
+  final _irrigationCtrl = TextEditingController();
+  String _phone = '';
   String _language = 'bn';
   bool _hydrated = false;
   bool _saving = false;
@@ -58,6 +62,9 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
     _farmSizeCtrl.dispose();
     _mainCropCtrl.dispose();
     _experienceCtrl.dispose();
+    _villageCtrl.dispose();
+    _soilCtrl.dispose();
+    _irrigationCtrl.dispose();
     super.dispose();
   }
 
@@ -74,6 +81,10 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
     _experienceCtrl.text = f.experienceYears > 0
         ? f.experienceYears.toString()
         : '';
+    _villageCtrl.text = f.village;
+    _soilCtrl.text = f.soilType;
+    _irrigationCtrl.text = f.irrigationSource;
+    _phone = f.phone;
     _language = f.language.isEmpty ? 'bn' : f.language;
   }
 
@@ -103,6 +114,9 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
         farmSizeAcres: farmSize,
         mainCrop: _mainCropCtrl.text.trim(),
         experienceYears: exp,
+        village: _villageCtrl.text.trim(),
+        soilType: _soilCtrl.text.trim(),
+        irrigationSource: _irrigationCtrl.text.trim(),
         language: _language,
       );
       await repo.saveFarmer(updated);
@@ -219,6 +233,17 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                                   ? AppStrings.editNameRequired
                                   : null,
                             ),
+                            if (_phone.isNotEmpty) ...[
+                              const SizedBox(height: AppSpacing.lg),
+                              InputDecorator(
+                                decoration: const InputDecoration(
+                                  labelText: 'মোবাইল নম্বর',
+                                  prefixIcon: Icon(Icons.phone_outlined),
+                                  border: OutlineInputBorder(),
+                                ),
+                                child: Text(_phone),
+                              ),
+                            ],
                             const SizedBox(height: AppSpacing.lg),
                             Row(
                               crossAxisAlignment: CrossAxisAlignment.start,
@@ -246,6 +271,13 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                                   ),
                                 ),
                               ],
+                            ),
+                            const SizedBox(height: AppSpacing.lg),
+                            AppTextField(
+                              label: 'গ্রাম',
+                              hint: 'যেমন: বটিয়াঘাটা',
+                              controller: _villageCtrl,
+                              prefixIcon: Icons.home_work_outlined,
                             ),
                           ],
                         ),
@@ -322,6 +354,20 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                               hint: 'যেমন: ধান',
                               controller: _mainCropCtrl,
                               prefixIcon: Icons.agriculture_outlined,
+                            ),
+                            const SizedBox(height: AppSpacing.lg),
+                            AppTextField(
+                              label: 'মাটির ধরন',
+                              hint: 'যেমন: দোআঁশ',
+                              controller: _soilCtrl,
+                              prefixIcon: Icons.terrain_outlined,
+                            ),
+                            const SizedBox(height: AppSpacing.lg),
+                            AppTextField(
+                              label: 'সেচের উৎস',
+                              hint: 'যেমন: গভীর নলকূপ',
+                              controller: _irrigationCtrl,
+                              prefixIcon: Icons.water_drop_outlined,
                             ),
                           ],
                         ),

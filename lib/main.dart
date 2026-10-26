@@ -15,7 +15,7 @@ const String _kOnboardingDoneKey = 'krishiai.onboardingDone';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  // 1) .env first - Cloudinary + OpenWeatherMap keys must be available
+  // 1) .env first - ImgBB + OpenWeatherMap keys must be available
   //    synchronously before any service is constructed.
   await dotenv.load(fileName: '.env', mergeWith: <String, String>{});
   // 2) Firebase (Firestore) before any repository is touched.

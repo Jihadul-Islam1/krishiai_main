@@ -29,14 +29,13 @@ service cloud.firestore {
         allow read: if isSelfPhone(phone);
         allow create, update: if isSelfPhone(phone)
           && request.resource.data.keys().hasOnly([
-            'id','name','phone','division','district','upazila',
-            'unionName','village','landSizeDecimal','primaryCrops',
-            'soilType','irrigationSource','createdAt','updatedAt'
+            'id','name','phone','district','upazila','village',
+            'experienceYears','farmSizeAcres','mainCrop','language',
+            'soilType','irrigationSource','profileImagePath',
+            'createdAt','updatedAt'
           ])
-          && request.resource.data.phone is string
-          && request.resource.data.phone.matches('^\\+8801[3-9][0-9]{8}$')
+          && request.resource.data.phone == phone
           && request.resource.data.name is string
-          && request.resource.data.name.size() > 0
           && request.resource.data.name.size() <= 80;
         allow delete: if false;
       }
@@ -45,6 +44,9 @@ service cloud.firestore {
       match /crops/{cropId}         { allow read, write: if isSelfPhone(phone); }
       match /diagnoses/{diagId}    { allow read, write: if isSelfPhone(phone); }
       match /expenses/{expId}      { allow read, write: if isSelfPhone(phone); }
+      match /profit_records/{pid}   { allow read, write: if isSelfPhone(phone); }
+      match /tool_plans/{tid}       { allow read, write: if isSelfPhone(phone); }
+      match /photos/{photoId}       { allow read, write: if isSelfPhone(phone); }
       match /market_favorites/{fid} { allow read, write: if isSelfPhone(phone); }
 
       match /notifications/{nid} {
@@ -60,10 +62,34 @@ service cloud.firestore {
         allow delete: if isSelfPhone(phone);
       }
 
-      // meta/* caches are written only by Admin SDK (future).
+      // meta/* caches — app can read its own; writes currently client-side.
       match /meta/{metaDoc} {
-        allow read, write: if false;
+        allow read: if isSelfPhone(phone);
+        allow write: if isSelfPhone(phone);
       }
+    }
+
+    // -----------------------------------------------------------------------
+    // market_prices_live (global collection — NOT under users/{phone})
+    //
+    // Each document id is a crop id (e.g. `potato`, `rice_miniket`).
+    // The admin panel writes here; the mobile app reads + streams.
+    //
+    // Read:  open to all (app needs it without Firebase Auth).
+    // Write: schema-validated (must have cropName, currentPrice, category).
+    //        In production, tighten this to admin-only via App Check or
+    //        a custom claim / admin whitelist.
+    // -----------------------------------------------------------------------
+    match /market_prices_live/{cropId} {
+      allow read: if true;
+      allow create, update: if
+           request.resource.data.cropName is string
+        && request.resource.data.cropName.size() > 0
+        && request.resource.data.currentPrice is number
+        && request.resource.data.currentPrice > 0
+        && request.resource.data.category is string
+        && request.resource.data.category.size() > 0;
+      allow delete: if true;
     }
 
     match /{document=**} {

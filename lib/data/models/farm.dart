@@ -102,7 +102,7 @@ class Farm {
   /// If null, the UI computes a default = lastSoilTest + 1 year.
   final DateTime? nextSoilTestDate;
 
-  /// Public Cloudinary URL of the farmer's field photo. Stored on the
+  /// Public image URL of the farmer's field photo. Stored on the
   /// Farm doc so every device signed in with the same verified phone
   /// loads the same picture. Optional - missing photos render a fallback
   /// gradient on the dashboard and detail screens.

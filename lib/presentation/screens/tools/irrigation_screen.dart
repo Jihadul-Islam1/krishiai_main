@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:uuid/uuid.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
@@ -7,6 +8,8 @@ import '../../../core/theme/app_text_styles.dart';
 import '../../../core/widgets/app_card.dart';
 import '../../../core/widgets/app_text_field.dart';
 import '../../../core/widgets/primary_button.dart';
+import '../../../data/models/tool_plan.dart';
+import '../../providers/app_providers.dart';
 
 /// Irrigation planner.
 ///
@@ -30,6 +33,47 @@ class _IrrigationScreenState extends ConsumerState<IrrigationScreen> {
   void dispose() {
     _landCtrl.dispose();
     super.dispose();
+  }
+
+  bool _saving = false;
+
+  Future<void> _savePlan(
+    _Plan plan,
+    double land,
+    double daily,
+    double weekly,
+  ) async {
+    setState(() => _saving = true);
+    try {
+      final repo = await ref.read(toolPlanRepoProvider.future);
+      await repo.save(
+        ToolPlan(
+          id: const Uuid().v4(),
+          type: ToolPlan.irrigation,
+          title: 'সেচ: $_crop',
+          summary: '$_stage • $_soil • ${land.toStringAsFixed(2)} একর • '
+              'প্রতিদিন ${daily.toStringAsFixed(0)} লিটার, '
+              'সপ্তাহে ${plan.daysPerWeek} দিন',
+          data: {
+            'crop': _crop,
+            'stage': _stage,
+            'soil': _soil,
+            'weather': _weather,
+            'landAcres': land,
+            'dailyLiters': daily,
+            'weeklyLiters': weekly,
+            'daysPerWeek': plan.daysPerWeek,
+          },
+          savedAt: DateTime.now(),
+        ),
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('সেচ পরিকল্পনা সংরক্ষিত হয়েছে')),
+      );
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
   }
 
   @override
@@ -180,11 +224,10 @@ class _IrrigationScreenState extends ConsumerState<IrrigationScreen> {
           ),
           const SizedBox(height: AppSpacing.md),
           PrimaryButton(
-            label: 'রিমাইন্ডার সেট করুন',
-            icon: Icons.notifications_active_rounded,
-            onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('রিমাইন্ডার সংরক্ষিত হয়েছে')),
-            ),
+            label: 'পরিকল্পনা সংরক্ষণ করুন',
+            icon: Icons.save_outlined,
+            loading: _saving,
+            onPressed: () => _savePlan(plan, land, daily, weekly),
           ),
           const SizedBox(height: AppSpacing.lg),
         ],

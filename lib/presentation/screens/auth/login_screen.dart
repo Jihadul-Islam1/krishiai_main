@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show kIsWeb, kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -9,7 +10,6 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../providers/app_providers.dart';
-import '../../../core/services/firestore_service.dart';
 
 /// Base URL of the bdapps PHP backend. All subscription / OTP endpoints
 /// (send_otp, verify_otp, check_subscription, unsubscribe) live under
@@ -24,6 +24,15 @@ const String _kUserPhone = 'userPhone';
 bool _isSupportedNumber(String phone) {
   return RegExp(r'^01(?:6|8)\d{8}$').hasMatch(phone);
 }
+
+/// Whitelisted test phone numbers that bypass bdapps OTP (for web preview / developer testing).
+const Set<String> _kTestNumbers = {'01800000000', '01600000000', '01812345678'};
+
+/// TEMPORARY: shows an extra "test login" box (any BD number + OTP 123456)
+/// that skips the bdapps server. Set to false (or delete the box) once the
+/// bdapps backend is reachable again - it works in release APKs too.
+const bool _kEnableTestLogin = true;
+const String _kTestOtp = '123456';
 
 /// bdapps `app_id` for the Krishi AI subscription product. Must match
 /// the value registered on https://developer.bdapps.io for app
@@ -91,13 +100,9 @@ Future<void> _clearAuth() async {
   final prefs = await SharedPreferences.getInstance();
   await prefs.setBool(_kIsLoggedIn, false);
   await prefs.remove(_kUserPhone);
-  // Wipe the Firestore local cache so the next signed-in user starts from
-  // a clean slate instead of seeing this user's data peek through.
-  try {
-    await FirestoreService.boot().clearCache();
-  } catch (_) {
-    // Best-effort - boot() may not have run yet in some test harnesses.
-  }
+  // Cached data is keyed by phone number and the farmer's data stays in
+  // Firestore, so logging out only drops the session; the next login
+  // (this or another number) re-hydrates its own data.
 }
 
 /// Invalidates the auth provider(s) so GoRouter re-evaluates the
@@ -138,15 +143,59 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   final TextEditingController _phoneController = TextEditingController();
   bool _isLoading = false;
 
+  Future<void> _loginDirectly(String phone) async {
+    setState(() => _isLoading = true);
+    try {
+      _showSuccess(
+        kIsWeb ? 'ওয়েব টেস্ট মোড: লগইন সফল!' : 'টেস্ট মোড: লগইন সফল!',
+      );
+      await Future.delayed(const Duration(milliseconds: 600));
+      await _persistAuth(phone);
+      _invalidateAuth(ref);
+      if (!mounted) return;
+      _goHome();
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  final TextEditingController _testPhoneController = TextEditingController();
+  final TextEditingController _testOtpController = TextEditingController();
+
+  Future<void> _onTestLogin() async {
+    final phone = _testPhoneController.text.trim();
+    final otp = _testOtpController.text.trim();
+    if (!RegExp(r'^01[3-9]\d{8}$').hasMatch(phone)) {
+      _showError('সঠিক ১১ ডিজিটের নম্বর দিন (01XXXXXXXXX)');
+      return;
+    }
+    if (otp != _kTestOtp) {
+      _showError('টেস্ট OTP ভুল (123456 দিন)');
+      return;
+    }
+    await _loginDirectly(phone);
+  }
+
   Future<void> _onContinue() async {
     final phone = _phoneController.text.trim();
 
     if (phone.isEmpty) {
+      if (kIsWeb || kDebugMode) {
+        await _loginDirectly('01812345678');
+        return;
+      }
       _showError('মোবাইল নম্বর দিন');
       return;
     }
-    if (!_isSupportedNumber(phone)) {
-      _showError('সঠিক Robi/Circel নম্বর দিন');
+    if (!_isSupportedNumber(phone) &&
+        !(kDebugMode && _kTestNumbers.contains(phone))) {
+      _showError('সঠিক Robi/Circel নম্বর দিন (016/018)');
+      return;
+    }
+
+    // Bypass for web browser (prevents CORS 'Failed to fetch') or developer debug testing
+    if (kIsWeb || (kDebugMode && _kTestNumbers.contains(phone))) {
+      await _loginDirectly(phone);
       return;
     }
 
@@ -173,6 +222,16 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             body: {'user_mobile': phone, 'msisdn': phone, 'app_id': _kAppId},
           )
           .timeout(const Duration(seconds: 15));
+
+      if (otpResponse.statusCode != 200) {
+        // e.g. 403 "Access denied." from the PHP host: not JSON, so report
+        // the real cause instead of a generic format error.
+        _showError(
+          'সার্ভার অনুরোধ গ্রহণ করেনি (HTTP ${otpResponse.statusCode})। '
+          'bdapps সার্ভারের সেটিংস/অ্যাক্সেস পরীক্ষা করুন।',
+        );
+        return;
+      }
 
       final otpData = jsonDecode(otpResponse.body);
       if (otpData is! Map<String, dynamic>) {
@@ -240,7 +299,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     } on SocketException {
       _showError('ইন্টারনেট সংযোগ নেই। Wi-Fi/মোবাইল ডেটা চেক করুন।');
     } on http.ClientException catch (e) {
-      _showError('সার্ভারে যোগাযোগ ব্যর্থ: ${e.message}');
+      if (kIsWeb) {
+        _showError(
+          'ব্রাউজারে CORS সীমাবদ্ধতার কারণে সংযোগ ব্যর্থ। অনুগ্রহ করে "ওয়েব টেস্ট লগইন" ব্যবহার করুন।',
+        );
+      } else {
+        _showError('সার্ভারে যোগাযোগ ব্যর্থ: ${e.message}');
+      }
     } on FormatException {
       _showError('সার্ভার থেকে ভুল উত্তর এসেছে। আবার চেষ্টা করুন।');
     } catch (e) {
@@ -283,6 +348,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   @override
   void dispose() {
     _phoneController.dispose();
+    _testPhoneController.dispose();
+    _testOtpController.dispose();
     super.dispose();
   }
 
@@ -291,86 +358,216 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // App icon — falls back to a green leaf if the asset
-              // (assets/app_icon.png) isn't shipped.
-              Image.asset(
-                'assets/agro.png',
-                width: 110,
-                height: 110,
-                fit: BoxFit.contain,
-                errorBuilder: (_, _, _) => Container(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // App icon — falls back to a green leaf if the asset
+                // (assets/app_icon.png) isn't shipped.
+                Image.asset(
+                  'assets/agro.png',
                   width: 110,
                   height: 110,
-                  decoration: BoxDecoration(
-                    color: Colors.green.shade50,
-                    borderRadius: BorderRadius.circular(28),
+                  fit: BoxFit.contain,
+                  errorBuilder: (_, _, _) => Container(
+                    width: 110,
+                    height: 110,
+                    decoration: BoxDecoration(
+                      color: Colors.green.shade50,
+                      borderRadius: BorderRadius.circular(28),
+                    ),
+                    child: Icon(
+                      Icons.eco_rounded,
+                      size: 64,
+                      color: Colors.green.shade600,
+                    ),
                   ),
-                  child: Icon(
-                    Icons.eco_rounded,
-                    size: 64,
+                ),
+                const SizedBox(height: 20),
+                Text(
+                  'Krishi AI',
+                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
                     color: Colors.green.shade600,
                   ),
+                  textAlign: TextAlign.center,
                 ),
-              ),
-              const SizedBox(height: 20),
-              Text(
-                'Krishi AI',
-                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: Colors.green.shade600,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                '২.৭৮ টাকা/দিন (ভ্যাট, এসডি ও এসসি সহ)। শুধুমাত্র Robi ও Circel গ্রাহকদের জন্য।',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: Colors.grey.shade600,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              const SizedBox(height: 32),
-              TextField(
-                controller: _phoneController,
-                keyboardType: TextInputType.phone,
-                enabled: !_isLoading,
-                decoration: InputDecoration(
-                  labelText: 'মোবাইল নম্বর',
-                  hintText: '01XXXXXXXXX',
-                  prefixIcon: const Icon(Icons.phone_android_rounded),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
+                const SizedBox(height: 8),
+                Text(
+                  '২.৭৮ টাকা/দিন (ভ্যাট, এসডি ও এসসি সহ)। শুধুমাত্র Robi ও Circel গ্রাহকদের জন্য।',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Colors.grey.shade600,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
-              ),
-              const SizedBox(height: 20),
-              _isLoading
-                  ? const Center(child: CircularProgressIndicator())
-                  : FilledButton(
-                      onPressed: _onContinue,
-                      style: FilledButton.styleFrom(
-                        backgroundColor: Colors.green.shade600,
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
+                const SizedBox(height: 32),
+                TextField(
+                  controller: _phoneController,
+                  keyboardType: TextInputType.phone,
+                  enabled: !_isLoading,
+                  decoration: InputDecoration(
+                    labelText: 'মোবাইল নম্বর',
+                    hintText: '01XXXXXXXXX',
+                    prefixIcon: const Icon(Icons.phone_android_rounded),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                _isLoading
+                    ? const Center(child: CircularProgressIndicator())
+                    : FilledButton(
+                        onPressed: _onContinue,
+                        style: FilledButton.styleFrom(
+                          backgroundColor: Colors.green.shade600,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: const Text(
+                          'পরবর্তী',
+                          style: TextStyle(fontSize: 16),
                         ),
                       ),
-                      child: const Text(
-                        'পরবর্তী',
-                        style: TextStyle(fontSize: 16),
+                if (kIsWeb || kDebugMode) ...[
+                  const SizedBox(height: 16),
+                  OutlinedButton.icon(
+                    onPressed: _isLoading
+                        ? null
+                        : () => _loginDirectly(
+                            _phoneController.text.trim().isNotEmpty &&
+                                    (_isSupportedNumber(
+                                          _phoneController.text.trim(),
+                                        ) ||
+                                        _kTestNumbers.contains(
+                                          _phoneController.text.trim(),
+                                        ))
+                                ? _phoneController.text.trim()
+                                : '01812345678',
+                          ),
+                    icon: const Icon(Icons.bolt_rounded, color: Colors.orange),
+                    label: const Text(
+                      'ওয়েব টেস্ট লগইন (সরাসরি প্রবেশ)',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.green.shade800,
+                      side: BorderSide(
+                        color: Colors.green.shade400,
+                        width: 1.5,
+                      ),
+                      backgroundColor: Colors.green.shade50.withValues(
+                        alpha: 0.5,
+                      ),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
                       ),
                     ),
-            ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '💡 ব্রাউজারে CORS সীমাবদ্ধতা এড়াতে সরাসরি প্রবেশ ব্যবহার করুন।',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                  ),
+                ],
+                if (_kEnableTestLogin) ...[
+                  const SizedBox(height: 28),
+                  _buildTestLoginBox(),
+                ],
+              ],
+            ),
           ),
         ),
+      ),
+    );
+  }
+
+  /// Temporary test box - see [_kEnableTestLogin].
+  Widget _buildTestLoginBox() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.orange.shade50,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.orange.shade300),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.science_rounded, color: Colors.orange.shade800),
+              const SizedBox(width: 8),
+              Text(
+                'টেস্ট লগইন (সাময়িক)',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: Colors.orange.shade900,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'যেকোনো নম্বর + OTP $_kTestOtp। bdapps সার্ভার ব্যবহার হয় না।',
+            style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _testPhoneController,
+            keyboardType: TextInputType.phone,
+            enabled: !_isLoading,
+            decoration: InputDecoration(
+              labelText: 'টেস্ট মোবাইল নম্বর',
+              hintText: '01XXXXXXXXX',
+              prefixIcon: const Icon(Icons.phone_android_rounded),
+              filled: true,
+              fillColor: Colors.white,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: _testOtpController,
+            keyboardType: TextInputType.number,
+            enabled: !_isLoading,
+            maxLength: 6,
+            decoration: InputDecoration(
+              labelText: 'OTP',
+              hintText: _kTestOtp,
+              counterText: '',
+              prefixIcon: const Icon(Icons.password_rounded),
+              filled: true,
+              fillColor: Colors.white,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          FilledButton(
+            onPressed: _isLoading ? null : _onTestLogin,
+            style: FilledButton.styleFrom(
+              backgroundColor: Colors.orange.shade700,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            child: const Text('টেস্ট লগইন'),
+          ),
+        ],
       ),
     );
   }
@@ -447,6 +644,16 @@ class _OtpVerifyPageState extends ConsumerState<OtpVerifyPage> {
     final otp = _otpController.text.trim();
     if (otp.isEmpty || otp.length < 4) {
       _showError('OTP সঠিকভাবে দাও');
+      return;
+    }
+
+    // Fast bypass for web or mock OTP codes in debug mode only
+    if (kIsWeb || (kDebugMode && (otp == '123456' || otp == '000000'))) {
+      await _persistAuth(widget.phone);
+      _invalidateAuth(ref);
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      widget.onVerified();
       return;
     }
 
@@ -721,6 +928,9 @@ class AuthSession {
   /// Calls `unsubscribe.php`. Returns true if the server confirmed the
   /// cancellation (REGISTERED gone / UNREGISTERED).
   static Future<bool> unsubscribe(String phone) async {
+    if (kIsWeb || (kDebugMode && _kTestNumbers.contains(phone))) {
+      return true;
+    }
     try {
       final res = await http
           .post(
@@ -747,4 +957,11 @@ class AuthSession {
   }
 
   static Future<void> clearLocalAuth() => _clearAuth();
+
+  /// Ends the session (the farmer's data stays in Firestore) and makes the
+  /// router send the user back to the login screen.
+  static Future<void> signOut(WidgetRef ref) async {
+    await _clearAuth();
+    _invalidateAuth(ref);
+  }
 }

@@ -11,7 +11,6 @@ import '../../../core/widgets/app_card.dart';
 import '../../../core/widgets/app_chip.dart';
 import '../../../core/widgets/app_divider.dart';
 import '../../../core/widgets/icon_badge.dart';
-import '../../../core/widgets/primary_button.dart';
 import '../../../core/widgets/section_header.dart';
 import '../../../core/widgets/states.dart';
 import '../../../data/models/crop.dart';
@@ -39,9 +38,7 @@ class MyFarmScreen extends ConsumerWidget {
             data: (c) => c,
             orElse: () => <Crop>[],
           );
-          if (farms.isEmpty) {
-            return _EmptyFarmBody(onAdd: () => context.push('/farm/add'));
-          }
+          // Same layout with or without farms (zero stats, empty list card).
           return _FarmBody(
             farms: farms,
             crops: crops,
@@ -192,19 +189,30 @@ class _FarmBodyState extends ConsumerState<_FarmBody> {
                 ),
                 const SizedBox(height: AppSpacing.md),
                 if (visible.isEmpty)
-                  const AppCard(
+                  AppCard(
                     bordered: true,
+                    onTap: widget.farms.isEmpty
+                        ? () => context.push('/farm/add')
+                        : null,
                     child: Row(
                       children: [
                         IconBadge(
-                          icon: Icons.filter_alt_off_rounded,
-                          tint: AppColors.tintSlate,
-                          color: AppColors.textSecondary,
+                          icon: widget.farms.isEmpty
+                              ? Icons.add_location_alt_outlined
+                              : Icons.filter_alt_off_rounded,
+                          tint: widget.farms.isEmpty
+                              ? AppColors.tintGreen
+                              : AppColors.tintSlate,
+                          color: widget.farms.isEmpty
+                              ? AppColors.primary
+                              : AppColors.textSecondary,
                         ),
-                        SizedBox(width: AppSpacing.md),
+                        const SizedBox(width: AppSpacing.md),
                         Expanded(
                           child: Text(
-                            'এই ফিল্টারে কোনো খামার নেই।',
+                            widget.farms.isEmpty
+                                ? '${AppStrings.noFarmsYet}। ${AppStrings.addFirstFarm} — এখানে ট্যাপ করুন।'
+                                : 'এই ফিল্টারে কোনো খামার নেই।',
                             style: AppTextStyles.bodySecondary,
                           ),
                         ),
@@ -667,6 +675,7 @@ class _FarmCard extends StatelessWidget {
           child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
             Container(
               width: 52, height: 52,
+              clipBehavior: Clip.antiAlias,
               decoration: BoxDecoration(
                 gradient: const LinearGradient(
                   begin: Alignment.topLeft, end: Alignment.bottomRight,
@@ -674,7 +683,13 @@ class _FarmCard extends StatelessWidget {
                 borderRadius: BorderRadius.circular(14),
               ),
               alignment: Alignment.center,
-              child: const Icon(Icons.grass_rounded, color: Color(0xFFD1FAE5), size: 26),
+              child: (farm.photoUrl ?? '').isNotEmpty
+                  ? Image.network(
+                      farm.photoUrl!,
+                      width: 52, height: 52, fit: BoxFit.cover,
+                      errorBuilder: (_, _, _) => const Icon(Icons.grass_rounded, color: Color(0xFFD1FAE5), size: 26),
+                    )
+                  : const Icon(Icons.grass_rounded, color: Color(0xFFD1FAE5), size: 26),
             ),
             const SizedBox(width: AppSpacing.md),
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -767,50 +782,4 @@ class _ActionDivider extends StatelessWidget {
   @override
   Widget build(BuildContext context) =>
       Container(width: 1, height: 18, color: AppColors.divider);
-}
-
-class _EmptyFarmBody extends StatelessWidget {
-  const _EmptyFarmBody({required this.onAdd});
-  final VoidCallback onAdd;
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.lg),
-          child: Column(children: [
-            Row(children: [
-              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('OVERVIEW', style: AppTextStyles.overline),
-                const SizedBox(height: AppSpacing.xxs),
-                Text(AppStrings.tabFarm, style: AppTextStyles.h1),
-              ])),
-              Material(
-                color: AppColors.primary,
-                shape: const CircleBorder(),
-                child: InkWell(
-                  customBorder: const CircleBorder(),
-                  onTap: onAdd,
-                  child: const SizedBox(
-                    width: 44, height: 44,
-                    child: Icon(Icons.add_rounded, color: Colors.white, size: 22),
-                  ),
-                ),
-              ),
-            ]),
-            const Spacer(),
-            const EmptyState(
-              icon: Icons.grass_rounded,
-              title: AppStrings.noFarmsYet,
-              message: AppStrings.addFirstFarm,
-            ),
-            const Spacer(),
-            PrimaryButton(label: AppStrings.addFarm, icon: Icons.add_rounded, onPressed: onAdd),
-          ]),
-        ),
-      ),
-    );
-  }
 }

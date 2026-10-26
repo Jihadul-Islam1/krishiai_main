@@ -2,22 +2,23 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:crypto/crypto.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
 
-/// Abstract image uploader so the crop-doctor screen never knows which
-/// provider is in use. Swap to Firebase Storage later by writing a new
-/// `FirebaseImageStorage` that fulfils the same contract.
+/// An uploaded image: [url] is what the app displays, [deleteUrl] (when the
+/// provider gives one) lets the owner remove it later.
+class RemoteImage {
+  const RemoteImage({required this.url, this.deleteUrl});
+  final String url;
+  final String? deleteUrl;
+}
+
+/// Abstract image uploader so screens never know which provider is in use.
 abstract class RemoteImageStorage {
-  /// Uploads [bytes] and returns a stable public URL the Firestore doc can
-  /// store. Implementations may throw [RemoteImageUploadException] on
-  /// network / auth failure.
-  Future<String> uploadBytes(
-    List<int> bytes, {
-    required String filename,
-    String folder = 'krishiai',
-  });
+  /// Uploads [bytes] and returns the public image. [name] is a descriptive
+  /// file name (the caller includes the owner's phone digits in it).
+  /// Throws [RemoteImageUploadException] on network / auth failure.
+  Future<RemoteImage> upload(List<int> bytes, {required String name});
 }
 
 class RemoteImageUploadException implements Exception {
@@ -30,91 +31,66 @@ class RemoteImageUploadException implements Exception {
       '${cause != null ? ' ($cause)' : ''}';
 }
 
-/// Cloudinary unsigned-upload implementation. The crop-doctor screen supplies
-/// the local file's bytes; we POST them to the cloud's upload endpoint using
-/// the `upload_preset` from the dashboard.
+/// ImgBB implementation (https://api.imgbb.com).
 ///
-/// Required `.env` keys (filled by the maintainer — never commit real values):
-///   CLOUDINARY_CLOUD_NAME      e.g. "krishiai"
-///   CLOUDINARY_UPLOAD_PRESET   e.g. "krishiai_unsigned"
-class CloudinaryImageStorage implements RemoteImageStorage {
-  CloudinaryImageStorage({http.Client? client}) : _client = client ?? http.Client();
+/// Required `.env` key:
+///   IMGBB_API_KEY   from https://api.imgbb.com
+///
+/// ImgBB has no folders, so ownership is tracked in Firestore
+/// (`users/{phone}/photos/{id}`) - see `user_photo_upload.dart`.
+class ImgbbImageStorage implements RemoteImageStorage {
+  ImgbbImageStorage({http.Client? client})
+    : _client = client ?? http.Client();
 
   final http.Client _client;
 
-  String get _cloudName {
-    final v = dotenv.env['CLOUDINARY_CLOUD_NAME'];
+  String get _apiKey {
+    final v = dotenv.env['IMGBB_API_KEY'];
     if (v == null || v.isEmpty) {
-      throw RemoteImageUploadException(
-        'CLOUDINARY_CLOUD_NAME missing in .env',
-      );
-    }
-    return v;
-  }
-
-  String get _uploadPreset {
-    final v = dotenv.env['CLOUDINARY_UPLOAD_PRESET'];
-    if (v == null || v.isEmpty) {
-      throw RemoteImageUploadException(
-        'CLOUDINARY_UPLOAD_PRESET missing in .env',
-      );
+      throw RemoteImageUploadException('IMGBB_API_KEY missing in .env');
     }
     return v;
   }
 
   @override
-  Future<String> uploadBytes(
-    List<int> bytes, {
-    required String filename,
-    String folder = 'krishiai',
-  }) async {
-    final uri = Uri.parse(
-      'https://api.cloudinary.com/v1_1/$_cloudName/image/upload',
-    );
-    final digest = sha1.convert(bytes).toString().substring(0, 12);
-    final publicId = '${DateTime.now().millisecondsSinceEpoch}_$digest';
-
+  Future<RemoteImage> upload(List<int> bytes, {required String name}) async {
+    final uri = Uri.https('api.imgbb.com', '/1/upload', {'key': _apiKey});
     final req = http.MultipartRequest('POST', uri)
-      ..fields['upload_preset'] = _uploadPreset
-      ..fields['folder'] = folder
-      ..fields['public_id'] = publicId
+      ..fields['name'] = name
       ..files.add(
-        http.MultipartFile.fromBytes(
-          'file',
-          bytes,
-          filename: filename,
-        ),
+        http.MultipartFile.fromBytes('image', bytes, filename: '$name.jpg'),
       );
 
     try {
-      final streamed = await _client.send(req).timeout(
-            const Duration(seconds: 30),
-          );
+      final streamed = await _client
+          .send(req)
+          .timeout(const Duration(seconds: 40));
       final resp = await http.Response.fromStream(streamed);
       if (resp.statusCode ~/ 100 != 2) {
         throw RemoteImageUploadException(
-          'Cloudinary rejected upload (HTTP ${resp.statusCode}): ${resp.body}',
+          'ImgBB rejected upload (HTTP ${resp.statusCode}): ${resp.body}',
         );
       }
       final body = jsonDecode(resp.body);
-      if (body is! Map<String, dynamic>) {
-        throw RemoteImageUploadException(
-          'Cloudinary returned a non-JSON body: ${resp.body}',
-        );
-      }
-      final url = body['secure_url']?.toString() ?? body['url']?.toString() ?? '';
+      final data = body is Map<String, dynamic> ? body['data'] : null;
+      final url = data is Map
+          ? (data['display_url'] ?? data['url'])?.toString() ?? ''
+          : '';
       if (url.isEmpty) {
         throw RemoteImageUploadException(
-          'Cloudinary response missing secure_url: ${resp.body}',
+          'ImgBB response missing image url: ${resp.body}',
         );
       }
-      return url;
+      return RemoteImage(
+        url: url,
+        deleteUrl: (data as Map)['delete_url']?.toString(),
+      );
     } on SocketException catch (e) {
-      throw RemoteImageUploadException('No network for Cloudinary upload', cause: e);
+      throw RemoteImageUploadException('No network for image upload', cause: e);
     } on TimeoutException catch (e) {
-      throw RemoteImageUploadException('Cloudinary upload timed out', cause: e);
+      throw RemoteImageUploadException('Image upload timed out', cause: e);
     } on http.ClientException catch (e) {
-      throw RemoteImageUploadException('Cloudinary client error', cause: e);
+      throw RemoteImageUploadException('Image upload client error', cause: e);
     }
   }
 }

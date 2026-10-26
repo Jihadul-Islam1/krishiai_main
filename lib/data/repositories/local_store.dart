@@ -43,8 +43,14 @@ class LocalStore {
   Future<void> writeJson(String key, Object value) async {
     final scopedKey = _scopedKey(key);
     await _prefs.setString(scopedKey, jsonEncode(value));
-    _shadowWrite(scopedKey, value);
+    _shadowWrite(key, value);
   }
+
+  /// Local-only write. Used by repositories that already persist to
+  /// Firestore per-document themselves, and by [UserDataSync] when it
+  /// hydrates the cache from Firestore.
+  Future<void> writeLocal(String key, Object value) =>
+      _prefs.setString(_scopedKey(key), jsonEncode(value));
 
   Object? readJson(String key) {
     return _decodeJson(_prefs.getString(_scopedKey(key)));
@@ -53,7 +59,15 @@ class LocalStore {
   Future<void> writeString(String key, String value) async {
     final scopedKey = _scopedKey(key);
     await _prefs.setString(scopedKey, value);
-    _shadowWriteString(scopedKey, value);
+    _shadowWrite(key, value);
+  }
+
+  /// Reads (and removes) a value saved before login, when no phone scope
+  /// existed yet - e.g. the onboarding profile-setup form.
+  Future<Object?> takeAnonymousJson(String key) async {
+    final value = _decodeJson(_prefs.getString(key));
+    if (value != null) await _prefs.remove(key);
+    return value;
   }
 
   String? readString(String key) => _prefs.getString(_scopedKey(key));
@@ -61,7 +75,7 @@ class LocalStore {
   Future<void> writeBool(String key, bool value) async {
     final scopedKey = _scopedKey(key);
     await _prefs.setBool(scopedKey, value);
-    _shadowWriteBool(scopedKey, value);
+    _shadowWrite(key, value);
   }
 
   bool readBool(String key, {bool defaultValue = false}) =>
@@ -70,7 +84,7 @@ class LocalStore {
   Future<void> remove(String key) async {
     final scopedKey = _scopedKey(key);
     await _prefs.remove(scopedKey);
-    _shadowDelete(scopedKey);
+    _shadowDelete(key);
   }
 
   Future<void> clearAll() async {
@@ -111,105 +125,53 @@ class LocalStore {
   // ---------------------------------------------------------------------------
   // Firestore shadow writes - best-effort, fire-and-forget; we never let a
   // remote failure abort a local write.
+  //
+  // Only keys listed in [shadowedDocs] are mirrored here. Farmer, farms,
+  // crops, expenses, diagnoses, notifications, profit records, subscription
+  // and AI history are written by their own repositories (per-document), so
+  // they are intentionally absent.
   // ---------------------------------------------------------------------------
 
+  /// Local key -> doc id under `users/{phone}/meta/{doc}`. The payload is
+  /// stored as `{data: <value>, updatedAt: <server time>}`.
+  static const Map<String, String> shadowedDocs = {
+    'market_favorites_v1': 'market_favorites',
+    'market_cache_v2': 'market_cache',
+    'weather_cache_v1': 'weather_cache',
+  };
+
+  DocumentReference<Map<String, dynamic>>? _metaRef(String key) {
+    final phone = _phone;
+    final doc = shadowedDocs[key];
+    if (phone == null || doc == null) return null;
+    return FsPaths.userDoc(phone).collection('meta').doc(doc);
+  }
+
   void _shadowWrite(String key, Object value) {
-    final phone = _phone;
-    if (phone == null) return;
-    final path = _pathForKey(key);
-    if (path == null) return;
-    unawaited(_safeSet(path, {key: value}));
-  }
-
-  void _shadowWriteString(String key, String value) {
-    final phone = _phone;
-    if (phone == null) return;
-    final path = _pathForKey(key);
-    if (path == null) return;
-    unawaited(_safeSet(path, {key: value}));
-  }
-
-  void _shadowWriteBool(String key, bool value) {
-    final phone = _phone;
-    if (phone == null) return;
-    final path = _pathForKey(key);
-    if (path == null) return;
-    unawaited(_safeSet(path, {key: value}));
+    final ref = _metaRef(key);
+    if (ref == null) return;
+    unawaited(_safe(
+      ref.path,
+      () => ref.set({
+        'data': value,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }),
+    ));
   }
 
   void _shadowDelete(String key) {
-    final phone = _phone;
-    if (phone == null) return;
-    final path = _pathForKey(key);
-    if (path == null) return;
-    unawaited(_safeDelete(path));
+    final ref = _metaRef(key);
+    if (ref == null) return;
+    unawaited(_safe(ref.path, ref.delete));
   }
 
-  // ---------------------------------------------------------------------------
-  // Path mapping from local key -> Firestore target. Centralised so adding a
-  // new shadow is a one-liner.
-  // ---------------------------------------------------------------------------
-
-  /// Maps a SharedPreferences key to the Firestore target reference (or null
-  /// to skip shadowing). Returns a typed handle the caller can write into.
-  _FsTarget? _pathForKey(String key) {
-    final phone = _phone;
-    if (phone == null) return null;
-    switch (key) {
-      case 'farmer_profile':
-        return _FsTarget.doc(FsPaths.profile(phone));
-      case 'farms':
-        // List-of-farms stored as a single doc snapshot under meta for
-        // backward compatibility with the legacy shape.
-        return _FsTarget.doc(FsPaths.userDoc(phone).collection('meta').doc('farms'));
-      case 'crops':
-        return _FsTarget.doc(FsPaths.userDoc(phone).collection('meta').doc('crops'));
-      case 'diagnoses':
-        return _FsTarget.doc(FsPaths.userDoc(phone).collection('meta').doc('diagnoses'));
-      case 'expenses':
-        return _FsTarget.doc(FsPaths.userDoc(phone).collection('meta').doc('expenses'));
-      case 'notifications':
-        return _FsTarget.doc(FsPaths.userDoc(phone).collection('meta').doc('notifications'));
-      case 'subscription':
-        return _FsTarget.doc(FsPaths.subscription(phone));
-      case 'ai_chat_history':
-        return _FsTarget.doc(FsPaths.aiHistory(phone));
-      case 'market_cache_v2':
-        return _FsTarget.doc(FsPaths.marketCache(phone));
-      case 'market_favorites_v1':
-        return _FsTarget.doc(FsPaths.userDoc(phone).collection('meta').doc('market_favorites'));
-      case 'weather_cache_v1':
-        return _FsTarget.doc(FsPaths.weatherCache(phone));
-      default:
-        // Unknown keys are not shadowed - they stay device-local.
-        return null;
-    }
-  }
-
-  Future<void> _safeSet(_FsTarget target, Map<String, dynamic> value) async {
+  Future<void> _safe(String path, Future<void> Function() op) async {
     try {
-      await target.ref.set(value, SetOptions(merge: true));
+      await op();
     } catch (e, st) {
       if (kDebugMode) {
-        debugPrint('[LocalStore] shadow write failed for '
-            '${target.ref.path}: $e\n$st');
+        debugPrint('[LocalStore] shadow op failed for $path: $e\n$st');
       }
     }
   }
-
-  Future<void> _safeDelete(_FsTarget target) async {
-    try {
-      await target.ref.delete();
-    } catch (e, st) {
-      if (kDebugMode) {
-        debugPrint('[LocalStore] shadow delete failed for '
-            '${target.ref.path}: $e\n$st');
-      }
-    }
-  }
-}
-
-class _FsTarget {
-  _FsTarget.doc(this.ref);
-  final DocumentReference<Map<String, dynamic>> ref;
 }

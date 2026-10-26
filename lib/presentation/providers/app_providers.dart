@@ -14,6 +14,7 @@ import '../../data/models/market_price.dart';
 import '../../data/models/recommendation.dart';
 import '../../data/models/subscription.dart';
 import '../../data/models/weather.dart';
+import '../../data/models/profit_estimate.dart';
 import '../../data/repositories/ai_repository.dart';
 import '../../data/repositories/crop_repository.dart';
 import '../../data/repositories/disease_repository.dart';
@@ -25,6 +26,10 @@ import '../../data/repositories/market_repository.dart';
 import '../../data/repositories/notification_repository.dart';
 import '../../data/repositories/recommendation_repository.dart';
 import '../../data/repositories/subscription_repository.dart';
+import '../../data/repositories/profit_repository.dart';
+import '../../data/repositories/user_data_sync.dart';
+import '../../data/repositories/tool_plan_repository.dart';
+import '../../core/utils/phone_key.dart';
 import '../../data/repositories/weather_repository.dart';
 import '../../core/services/permission_service.dart';
 import '../../core/services/speech_service.dart';
@@ -49,14 +54,18 @@ final sharedPreferencesProvider = FutureProvider<SharedPreferences>((
 final localStoreProvider = FutureProvider<LocalStore>((ref) async {
   final prefs = await ref.watch(sharedPreferencesProvider.future);
   final phone = await ref.watch(authPhoneProvider.future);
-  return LocalStore(prefs, phone: phone.isEmpty ? null : phone);
+  final store = LocalStore(prefs, phone: PhoneKey.fromString(phone));
+  // Hydrate this farmer's data from users/{phone}/... before any repository
+  // reads the cache (no-op when logged out; falls back to cache offline).
+  await UserDataSync.pull(store);
+  return store;
 });
 
 /// Image uploader for AI crop-doctor scans. Swap implementation here when
-/// moving from Cloudinary to Firebase Storage - callers don't need to
+/// moving from ImgBB to Firebase Storage - callers don't need to
 /// change.
 final imageStorageProvider = Provider<RemoteImageStorage>((ref) {
-  return CloudinaryImageStorage();
+  return ImgbbImageStorage();
 });
 
 /// Repositories ---------------------------------------------------------------------
@@ -98,6 +107,16 @@ final marketRepoProvider = FutureProvider<MarketRepository>((ref) async {
 final expenseRepoProvider = FutureProvider<ExpenseRepository>((ref) async {
   final store = await ref.watch(localStoreProvider.future);
   return ExpenseRepository(store);
+});
+
+final profitRepoProvider = FutureProvider<ProfitRepository>((ref) async {
+  final store = await ref.watch(localStoreProvider.future);
+  return ProfitRepository(store);
+});
+
+final toolPlanRepoProvider = FutureProvider<ToolPlanRepository>((ref) async {
+  final store = await ref.watch(localStoreProvider.future);
+  return ToolPlanRepository(store);
 });
 
 final recommendationRepoProvider = Provider<RecommendationRepository>((ref) {
@@ -162,6 +181,11 @@ final expensesProvider = FutureProvider<List<Expense>>((ref) async {
   return repo.all();
 });
 
+final profitRecordsProvider = FutureProvider<List<ProfitEstimate>>((ref) async {
+  final repo = await ref.watch(profitRepoProvider.future);
+  return repo.all();
+});
+
 final notificationsProvider = FutureProvider<List<AppNotification>>((
   ref,
 ) async {
@@ -196,22 +220,22 @@ final recommendationsProvider = FutureProvider<List<Recommendation>>((
   return repo.all();
 });
 
-final marketPricesProvider = FutureProvider<List<MarketPrice>>((ref) async {
+/// Live stream of market prices: any admin-panel write to Firestore
+/// (`market_prices_live`) is pushed to the app immediately, with no cache TTL.
+final marketPricesProvider = StreamProvider<List<MarketPrice>>((ref) async* {
   final repo = await ref.watch(marketRepoProvider.future);
   final farmer = await ref.watch(currentFarmerProvider.future);
-  return repo.all(farmer?.district ?? 'ঢাকা');
+  yield* repo.watch(farmer?.district ?? 'ঢাকা');
 });
 
 final marketFavoritesProvider = FutureProvider<List<MarketPrice>>((ref) async {
-  final repo = await ref.watch(marketRepoProvider.future);
-  final farmer = await ref.watch(currentFarmerProvider.future);
-  return repo.favorites(farmer?.district ?? 'ঢাকা');
+  final all = await ref.watch(marketPricesProvider.future);
+  return all.where((m) => m.isFavorite).toList(growable: false);
 });
 
 final marketCategoriesProvider = FutureProvider<List<String>>((ref) async {
-  final repo = await ref.watch(marketRepoProvider.future);
-  final farmer = await ref.watch(currentFarmerProvider.future);
-  return repo.categories(farmer?.district ?? 'ঢাকা');
+  final all = await ref.watch(marketPricesProvider.future);
+  return (all.map((m) => m.category).toSet().toList())..sort();
 });
 
 final diseaseLibraryProvider = FutureProvider<List<Disease>>((ref) async {

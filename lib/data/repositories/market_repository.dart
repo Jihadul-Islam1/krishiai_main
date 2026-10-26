@@ -56,18 +56,17 @@ class MarketRepository {
   Stream<List<MarketPrice>> watch(String location) async* {
     final district = _normalizeDistrict(location);
     try {
-      yield* FsPaths.marketPricesLive()
-          .snapshots()
-          .map((snap) {
-            final live = _parseFirestoreLive(snap.docs, district);
-            final merged = _mergeWithBundled(live, district);
-            return _applyFavorites(merged);
-          })
-          .handleError((_) {
-            // Swallow stream errors so the UI gets the offline path instead.
-          });
-    } catch (_) {
-      // No-op; consumer should also handle `all()` as offline fallback.
+      await for (final snap in FsPaths.marketPricesLive().snapshots()) {
+        final live = _parseFirestoreLive(snap.docs, district);
+        yield _applyFavorites(_mergeWithBundled(live, district));
+      }
+    } catch (e, st) {
+      if (kDebugMode) {
+        debugPrint('[MarketRepository] watch failed: $e\n$st');
+      }
+      // Firestore unreachable: fall back to the cached / bundled path so the
+      // UI never hangs on a loading state.
+      yield await all(district);
     }
   }
 

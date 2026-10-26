@@ -395,7 +395,7 @@ class _Header extends StatelessWidget {
                           Text(
                             'জেলার সবচেয়ে তাজা বাজারদর',
                             style: AppTextStyles.caption.copyWith(
-                              color: Colors.white.withValues(alpha: 0.85),
+                              color: Colors.white.withValues(alpha: 1),
                             ),
                           ),
                         ],
@@ -537,7 +537,7 @@ class _CategoryRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 44,
+      height: 50,
       child: ListView(
         scrollDirection: Axis.horizontal,
         physics: const BouncingScrollPhysics(),
@@ -593,7 +593,7 @@ class _SummaryStrip extends StatelessWidget {
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [Color(0xFF064E3B), Color(0xFF065F46)],
+          colors: [Color.fromARGB(255, 2, 109, 80), Color(0xFF065F46)],
         ),
         borderRadius: BorderRadius.circular(AppRadius.lg),
         boxShadow: [
@@ -611,8 +611,8 @@ class _SummaryStrip extends StatelessWidget {
           Expanded(
             child: _SummaryItem(
               icon: Icons.shopping_basket_outlined,
-              tint: const Color(0xFF065F46),
-              color: const Color(0xFFA7F3D0),
+              tint: const Color(0xFF10B981),
+              color: const Color.fromARGB(255, 56, 75, 66),
               value: '$shown',
               label: showFavoritesOnly
                   ? AppStrings.marketFavoritesCount
@@ -627,8 +627,8 @@ class _SummaryStrip extends StatelessWidget {
           Expanded(
             child: _SummaryItem(
               icon: Icons.checklist_rounded,
-              tint: const Color(0xFF047857),
-              color: const Color(0xFFBBF7D0),
+              tint: const Color(0xFF10B981),
+              color: const Color.fromARGB(255, 46, 62, 52),
               value: '$total',
               label: AppStrings.marketInMarkets,
             ),
@@ -642,7 +642,7 @@ class _SummaryStrip extends StatelessWidget {
             child: _SummaryItem(
               icon: Icons.schedule_rounded,
               tint: const Color(0xFF10B981),
-              color: const Color(0xFFD1FAE5),
+              color: const Color.fromARGB(255, 154, 9, 9),
               value: lastUpdated == null ? '—' : _shortTime(lastUpdated!),
               label: AppStrings.marketUpdated,
             ),
@@ -682,11 +682,13 @@ class _SummaryItem extends StatelessWidget {
         const SizedBox(height: AppSpacing.sm),
         Text(
           value,
-          style: AppTextStyles.titleLarge,
+          style: AppTextStyles.titleLarge.copyWith(color: Colors.white),
           textAlign: TextAlign.center,
         ),
         const SizedBox(height: 2),
-        Text(label, style: AppTextStyles.caption, textAlign: TextAlign.center),
+        Text(label, style: AppTextStyles.caption.copyWith(
+            color: const Color.fromARGB(255, 245, 247, 247),fontSize: 13.0 // আপনার পছন্দের কালার (যেমন: Colors.white, Colors.amber, Color(0xFFA7F3D0) ইত্যাদি)
+          ), textAlign: TextAlign.center),
       ],
     );
   }
@@ -747,9 +749,9 @@ class _PriceCard extends StatelessWidget {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                Container(
-                  width: 52,
-                  height: 52,
+                Container(                                 //logor code name er age jei logo ta thakbe tar jonno ei container use kora hoyeche
+                  width: 30,
+                  height: 30,
                   decoration: BoxDecoration(
                     gradient: const LinearGradient(
                       begin: Alignment.topLeft,
@@ -773,15 +775,15 @@ class _PriceCard extends StatelessWidget {
                     size: 24,
                   ),
                 ),
-                const SizedBox(width: AppSpacing.md),
+                const SizedBox(width: 6),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
                         price.cropName,
-                        style: AppTextStyles.h3.copyWith(
-                          color: const Color(0xFFD1FAE5),
+                        style: AppTextStyles.h2.copyWith(
+                          color: const Color.fromARGB(255, 251, 253, 252),
                         ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
@@ -791,7 +793,7 @@ class _PriceCard extends StatelessWidget {
                         children: [
                           Icon(
                             Icons.storefront_outlined,
-                            size: 13,
+                            size: 14,
                             color: const Color(
                               0xFFA7F3D0,
                             ).withValues(alpha: 0.85),
@@ -801,7 +803,9 @@ class _PriceCard extends StatelessWidget {
                             child: Text(
                               '${price.market} • ${price.category}',
                               style: AppTextStyles.caption.copyWith(
-                                color: const Color(0xFFA7F3D0),
+                                color: const Color.fromARGB(255, 248, 249, 249),
+                                fontSize: 13.0,
+                                fontWeight: FontWeight.w700,
                               ),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
@@ -816,8 +820,8 @@ class _PriceCard extends StatelessWidget {
                             icon: trendIcon,
                             tint: trendTint,
                             color: trendColor,
-                            size: 22,
-                            iconSize: 13,
+                            size: 25,
+                            iconSize: 15,
                             shape: BoxShape.rectangle,
                           ),
                           const SizedBox(width: AppSpacing.xs),
@@ -825,7 +829,10 @@ class _PriceCard extends StatelessWidget {
                             '${changed >= 0 ? '+' : ''}${changed.toStringAsFixed(1)}%',
                             style: AppTextStyles.caption.copyWith(
                               color: trendColor,
+                              fontSize: 14.0,
                               fontWeight: FontWeight.w700,
+                              
+                              
                             ),
                           ),
                           const SizedBox(width: AppSpacing.xs),
@@ -833,6 +840,8 @@ class _PriceCard extends StatelessWidget {
                             '• $trendLabel',
                             style: AppTextStyles.caption.copyWith(
                               color: trendColor,
+                              fontSize: 12.0,
+                              fontWeight: FontWeight.w400,
                             ),
                           ),
                         ],
@@ -842,7 +851,9 @@ class _PriceCard extends StatelessWidget {
                         Text(
                           '${AppStrings.marketMinMax}: ${AppNumber.money(price.minPrice!)} - ${AppNumber.money(price.maxPrice!)}',
                           style: AppTextStyles.caption.copyWith(
-                            color: const Color(0xFFA7F3D0),
+                            color: const Color.fromARGB(255, 249, 252, 251),
+                            fontSize: 13.0,
+                            fontWeight: FontWeight.w700,
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -857,27 +868,31 @@ class _PriceCard extends StatelessWidget {
                   children: [
                     Text(
                       AppNumber.money(price.currentPrice),
-                      style: AppTextStyles.h2.copyWith(
+                      style: AppTextStyles.h1.copyWith(
                         color: const Color(0xFFF0FDF4),
                       ),
                     ),
-                    const SizedBox(height: 2),
+                    const SizedBox(height: 3),
                     Text(
                       '${AppStrings.marketPerUnit} ${price.unit}',
                       style: AppTextStyles.caption.copyWith(
-                        color: const Color(0xFFA7F3D0),
+                        color: const Color.fromARGB(255, 248, 249, 249),
+                        fontSize: 14.0,
+                        fontWeight: FontWeight.w400,
                       ),
                     ),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 5),
                     Text(
                       updated,
                       style: AppTextStyles.caption.copyWith(
-                        color: const Color(0xFFA7F3D0).withValues(alpha: 0.85),
+                        color: const Color.fromARGB(255, 243, 245, 244),
+                        fontSize: 14.0,
+                        fontWeight: FontWeight.w400,
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(width: AppSpacing.xs),
+                const SizedBox(width: 0),
                 IconButton(
                   tooltip: AppStrings.marketFavorites,
                   icon: Icon(

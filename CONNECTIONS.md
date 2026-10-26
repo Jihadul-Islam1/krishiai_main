@@ -333,7 +333,7 @@ also what is exposed to screens.
    subscriptionRepoProvider, weatherRepoProvider, weatherLocationRepoProvider
      each → constructor(LocalStore)
 
-   imageStorageProvider       → CloudinaryImageStorage
+   imageStorageProvider       → ImgbbImageStorage
                                 (in core/services/remote_image_storage.dart)
 
    diseaseApiProvider         → DiseaseApiService
@@ -413,7 +413,7 @@ external service. The wiring happens *only* in `app_providers.dart`.
 | `lib/data/services/weather_api.dart`                        | `http` → OpenWeatherMap                           | `weather_repository.dart`                                              |
 | `lib/core/services/firestore_service.dart`                 | `cloud_firestore` (low-level ops)                 | `main.dart`, every `*_repository.dart`                                 |
 | `lib/core/services/fs_paths.dart`                          | pure string helpers (`/users/{phone}/...`)        | `local_store.dart`, every repository                                   |
-| `lib/core/services/remote_image_storage.dart`               | `http` upload to Cloudinary                       | `crop_doctor_screen.dart` (via `imageStorageProvider`)                 |
+| `lib/core/services/remote_image_storage.dart`               | `http` upload to ImgBB                       | `crop_doctor_screen.dart` (via `imageStorageProvider`)                 |
 | `lib/core/services/permission_service.dart`                 | `permission_handler`                              | `app_providers.dart` (via `permissionServiceProvider`)                 |
 | `lib/core/services/speech_service.dart`                     | `speech_to_text`                                  | `app_providers.dart` (via `speechServiceProvider`)                     |
 | `lib/core/network/disease_api_service.dart`                 | `http` → ML backend                               | `app_providers.dart` (via `diseaseApiProvider`)                        |
@@ -522,7 +522,7 @@ MyFarmScreen
 GoRouter resolves /ai/scan
   └─ CropDoctorScreen
      ├─ user grants camera permission via permissionServiceProvider
-     ├─ image picked → imageStorageProvider.upload() (Cloudinary)
+     ├─ image picked → imageStorageProvider.upload() (ImgBB)
      ├─ DiseaseApiService.predict(imageUrl) via diseaseApiProvider
      ├─ DiseaseRepository.saveDiagnosis() via diseaseRepoProvider
      └─ context.push(/ai/scan/result, extra: {...})

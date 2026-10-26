@@ -6,7 +6,9 @@ import '../../../core/constants/app_strings.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_text_styles.dart';
+import '../../../core/services/profile_photo_service.dart';
 import '../../../core/widgets/app_card.dart';
+import '../../../core/widgets/user_avatar.dart';
 import '../../../core/widgets/app_chip.dart';
 import '../../../core/widgets/app_divider.dart';
 import '../../../core/widgets/icon_badge.dart';
@@ -337,15 +339,8 @@ class ProfileScreen extends ConsumerWidget {
     );
     if (confirmed != true) return;
     try {
-      final repo = await ref.read(farmerRepoProvider.future);
-      await repo.clear();
-      final prefs = await ref.read(sharedPreferencesProvider.future);
-      await prefs.remove('onboarding_complete');
-      ref.invalidate(currentFarmerProvider);
-      ref.invalidate(farmsProvider);
-      ref.invalidate(cropsProvider);
-      ref.invalidate(onboardingCompleteProvider);
-      if (context.mounted) context.go('/onboarding');
+      await AuthSession.signOut(ref);
+      if (context.mounted) context.go('/login');
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -362,17 +357,18 @@ class ProfileScreen extends ConsumerWidget {
 // Profile identity card
 // ────────────────────────────────────────────────────────────────────────────
 
-class _ProfileCard extends StatelessWidget {
+class _ProfileCard extends ConsumerWidget {
   const _ProfileCard({required this.farmer});
   final Farmer? farmer;
 
   @override
-  Widget build(BuildContext context) {
-    final name = farmer?.name ?? AppStrings.profileUnknownName;
+  Widget build(BuildContext context, WidgetRef ref) {
+    final name = (farmer?.name.trim().isEmpty ?? true)
+        ? AppStrings.profileUnknownName
+        : farmer!.name;
     final district = farmer?.district ?? '';
     final upazila = farmer?.upazila ?? '';
     final location = [upazila, district].where((s) => s.isNotEmpty).join(', ');
-    final initials = _initialsFor(name);
 
     return AppCard(
       padding: const EdgeInsets.all(AppSpacing.xl),
@@ -381,18 +377,33 @@ class _ProfileCard extends StatelessWidget {
       elevation: AppElevation.card,
       child: Row(
         children: [
-          Container(
-            width: 72,
-            height: 72,
-            decoration: const BoxDecoration(
-              color: AppColors.primary,
-              shape: BoxShape.circle,
-            ),
-            child: Center(
-              child: Text(
-                initials,
-                style: AppTextStyles.h1.copyWith(color: AppColors.textOnDark),
-              ),
+          GestureDetector(
+            onTap: () => ProfilePhotoService.change(context, ref),
+            child: Stack(
+              children: [
+                UserAvatar(
+                  name: farmer?.name ?? '',
+                  imageUrl: farmer?.profileImagePath,
+                  radius: 36,
+                ),
+                Positioned(
+                  right: 0,
+                  bottom: 0,
+                  child: Container(
+                    padding: const EdgeInsets.all(5),
+                    decoration: BoxDecoration(
+                      color: AppColors.accent,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 2),
+                    ),
+                    child: const Icon(
+                      Icons.camera_alt_rounded,
+                      size: 14,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
           const SizedBox(width: AppSpacing.lg),
@@ -456,20 +467,6 @@ class _ProfileCard extends StatelessWidget {
         ],
       ),
     );
-  }
-
-  String _initialsFor(String name) {
-    final parts = name
-        .trim()
-        .split(RegExp(r'\s+'))
-        .where((p) => p.isNotEmpty)
-        .toList();
-    if (parts.isEmpty) return 'ক';
-    if (parts.length == 1) {
-      return parts.first.characters.first.toUpperCase();
-    }
-    return (parts.first.characters.first + parts.last.characters.first)
-        .toUpperCase();
   }
 }
 

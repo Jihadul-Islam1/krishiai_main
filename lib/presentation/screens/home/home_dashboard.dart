@@ -2,8 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/services/profile_photo_service.dart';
+import '../../../core/widgets/user_avatar.dart';
 import '../../../data/models/weather.dart';
 import '../../providers/app_providers.dart';
+import 'farms_carousel.dart';
 
 class HomeDashboard extends ConsumerWidget {
   const HomeDashboard({super.key});
@@ -116,6 +119,8 @@ class HomeDashboard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final screenSize = MediaQuery.of(context).size;
     final weatherAsync = ref.watch(weatherProvider);
+    final farmer = ref.watch(currentFarmerProvider).valueOrNull;
+    final farmerName = farmer?.name.trim() ?? '';
     // Live snapshot if available; otherwise we render the same UI with the
     // bundled demo numbers so the layout never jumps.
     final WeatherSnapshot? snap = weatherAsync.valueOrNull;
@@ -176,28 +181,45 @@ class HomeDashboard extends ConsumerWidget {
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text(
-                                  'আসসালামু, রহিম ভাই',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 22,
-                                    fontWeight: FontWeight.bold,
-                                    letterSpacing: 0.3,
+                            // 🔴 Column-টিকে Expanded করা হয়েছে যেন এটি প্রোফাইল পিকচারের বামের খালি জায়গাটুকুর মধ্যে সীমাবদ্ধ থাকে
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    farmerName.isEmpty
+                                        ? 'শুভকামনা'
+                                        : 'শুভকামনা, $farmerName',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 22,
+                                      fontWeight: FontWeight.bold,
+                                      letterSpacing: 0.3,
+                                    ),
+                                    overflow: TextOverflow
+                                        .ellipsis, // <--- নাম বেশি বড় হলে শেষে '...' দেখাবে
+                                    maxLines:
+                                        1, // <--- নাম যেন ভেঙে নিচের লাইনে না যায়
                                   ),
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  'সোমবার, ০২ সেপ্টেম্বর ২০২৫',
-                                  style: TextStyle(
-                                    color: Colors.white.withValues(alpha: 0.7),
-                                    fontSize: 13,
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    todayLabel,
+                                    style: TextStyle(
+                                      color: Colors.white.withValues(
+                                        alpha: 0.7,
+                                      ),
+                                      fontSize: 13,
+                                    ),
+                                    overflow: TextOverflow
+                                        .ellipsis, // <--- তারিখ বড় হলেও স্ক্রিন ভাঙবে না
+                                    maxLines: 1,
                                   ),
-                                ),
-                              ],
+                                ],
+                              ),
                             ),
+                            const SizedBox(
+                              width: 12,
+                            ), // 🔴 নাম এবং প্রোফাইল পিকচারের মাঝে একটু নিরাপদ গ্যাপ রাখার জন্য
                             // ইউজার প্রোফাইল পিকচার (সার্কেল এভাটার)
                             Container(
                               padding: const EdgeInsets.all(2),
@@ -205,10 +227,15 @@ class HomeDashboard extends ConsumerWidget {
                                 color: Colors.white,
                                 shape: BoxShape.circle,
                               ),
-                              child: const CircleAvatar(
-                                radius: 24,
-                                backgroundColor: Colors.grey,
-                                child: Icon(Icons.person, color: Colors.white),
+                              child: GestureDetector(
+                                onTap: () =>
+                                    ProfilePhotoService.change(context, ref),
+                                child: UserAvatar(
+                                  name: farmerName,
+                                  imageUrl: farmer?.profileImagePath,
+                                  radius: 24,
+                                  backgroundColor: Colors.grey,
+                                ),
                               ),
                             ),
                           ],
@@ -254,17 +281,28 @@ class HomeDashboard extends ConsumerWidget {
                                           color: Colors.white,
                                         ),
                                         const SizedBox(width: 10),
-                                        Text(
-                                          weatherAsync.valueOrNull?.location ??
-                                              'স্থান খুঁজুন',
-                                          style: TextStyle(
-                                            color: Colors.white.withValues(
-                                              alpha: 0.85,
+                                        // 🔴 এখানে Expanded যোগ করা হয়েছে যাতে টেক্সটটি সার্চ বারের ভেতরের খালি জায়গাটুকুতেই সীমাবদ্ধ থাকে
+                                        Expanded(
+                                          child: Text(
+                                            weatherAsync
+                                                    .valueOrNull
+                                                    ?.location ??
+                                                'স্থান খুঁজুন',
+                                            style: TextStyle(
+                                              color: Colors.white.withValues(
+                                                alpha: 0.85,
+                                              ),
+                                              fontSize: 16,
                                             ),
-                                            fontSize: 16,
+                                            overflow: TextOverflow
+                                                .ellipsis, // এখন এটি সঠিকভাবে কাজ করবে
+                                            maxLines:
+                                                1, // লেখাটি যেন এক লাইনেই থাকে
                                           ),
-                                          overflow: TextOverflow.ellipsis,
                                         ),
+                                        const SizedBox(
+                                          width: 15,
+                                        ), // ডানপাশে একটু খালি জায়গা রাখার জন্য
                                       ],
                                     ),
                                   ),
@@ -273,7 +311,6 @@ class HomeDashboard extends ConsumerWidget {
                             ),
                             const SizedBox(width: 12),
                             // লোকেশন বাটন — GPS + OpenStreetMap দিয়ে
-                            // লাইভ লোকেশন নিয়ে ওয়েদার রিফ্রেশ করে।
                             Material(
                               color: Colors.white,
                               shape: const CircleBorder(),
@@ -286,8 +323,9 @@ class HomeDashboard extends ConsumerWidget {
                                   child: Center(
                                     child: Consumer(
                                       builder: (ctx, ref, _) {
-                                        final busy =
-                                            ref.watch(_osmBusyProvider);
+                                        final busy = ref.watch(
+                                          _osmBusyProvider,
+                                        );
                                         if (busy) {
                                           return const SizedBox(
                                             height: 22,
@@ -309,7 +347,8 @@ class HomeDashboard extends ConsumerWidget {
                               ),
                             ),
                           ],
-                        ),
+                        )
+
                       ],
                     ),
                   ),
@@ -504,12 +543,12 @@ class HomeDashboard extends ConsumerWidget {
             const SizedBox(height: 14),
 
             // ৪. "আমার জমি" টাইটেল রো
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 20.0),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20.0),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(
+                  const Text(
                     'আমার জমি',
                     style: TextStyle(
                       fontSize: 20,
@@ -517,9 +556,12 @@ class HomeDashboard extends ConsumerWidget {
                       color: Colors.black87,
                     ),
                   ),
-                  Text(
-                    'সব দেখুন >',
-                    style: TextStyle(color: Colors.grey, fontSize: 14),
+                  GestureDetector(
+                    onTap: () => context.go('/farm'),
+                    child: const Text(
+                      'সব দেখুন >',
+                      style: TextStyle(color: Colors.grey, fontSize: 14),
+                    ),
                   ),
                 ],
               ),
@@ -527,171 +569,8 @@ class HomeDashboard extends ConsumerWidget {
 
             const SizedBox(height: 16),
 
-            // ৫. ফিল্ড প্রভিউ কার্ড (Emerald Valley Plot F5)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20.0),
-              child: Container(
-                height: 240,
-                width: double.infinity,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(28),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.05),
-                      blurRadius: 10,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
-                ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(28),
-                  child: Stack(
-                    children: [
-                      // কন্টেইনার ব্যাকগ্রাউন্ড গ্রিন শেড (এখানে আপনার ফিল্ডের কাস্টম ইমেজ বসাতে পারেন)
-                      Container(
-                        color: const Color(0xFF1B4D22),
-                        width: double.infinity,
-                        height: double.infinity,
-                        child: const Center(
-                          child: Icon(
-                            Icons.gite_outlined,
-                            color: Colors.white24,
-                            size: 80,
-                          ),
-                        ),
-                      ),
-
-                      // ছবির ওপরে স্মুথ ডার্ক লিনিয়ার গ্রেডিয়েন্ট
-                      Container(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: [
-                              Colors.black.withValues(alpha: 0.1),
-                              Colors.black.withValues(alpha: 0.65),
-                            ],
-                          ),
-                        ),
-                      ),
-
-                      // কার্ডের ভেতরের টেক্সট এবং রেটিং বাটন এলিমেন্ট
-                      Padding(
-                        padding: const EdgeInsets.all(20.0),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            // রেটিং এবং লাভ/হার্ট বাটন রো
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 10,
-                                    vertical: 6,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white.withValues(alpha: 0.2),
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  child: const Row(
-                                    children: [
-                                      Icon(
-                                        Icons.star,
-                                        color: Colors.amber,
-                                        size: 16,
-                                      ),
-                                      SizedBox(width: 4),
-                                      Text(
-                                        '4.5',
-                                        style: TextStyle(
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                Container(
-                                  padding: const EdgeInsets.all(8),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white.withValues(alpha: 0.2),
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: const Icon(
-                                    Icons.favorite,
-                                    color: Colors.red,
-                                    size: 20,
-                                  ),
-                                ),
-                              ],
-                            ),
-
-                            // বটম এরিয়া: লোকেশন কো-অর্ডিনেট এবং টাইটেল
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              crossAxisAlignment: CrossAxisAlignment.end,
-                              children: [
-                                Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Row(
-                                      children: [
-                                        Icon(
-                                          Icons.location_on,
-                                          color: Colors.white.withValues(
-                                            alpha: 0.6,
-                                          ),
-                                          size: 14,
-                                        ),
-                                        const SizedBox(width: 4),
-                                        Text(
-                                          'খুলনা, বাংলাদেশ',
-                                          style: TextStyle(
-                                            color: Colors.white.withValues(
-                                              alpha: 0.6,
-                                            ),
-                                            fontSize: 12,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 4),
-                                    const Text(
-                                      'জমি: প্লট এফ-৫',
-                                      style: TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 18,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                // গোল সাদা রঙের এক্সটার্নাল নেভিগেশন বাটন (↗)
-                                Container(
-                                  height: 44,
-                                  width: 44,
-                                  decoration: const BoxDecoration(
-                                    color: Colors.white,
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: const Icon(
-                                    Icons.arrow_outward,
-                                    color: Colors.black87,
-                                    size: 20,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
+            // ৫. আমার জমি — ফার্মারের সব জমি (ছবিসহ, স্ক্রল করা যায়)
+            const FarmsCarousel(),
             const SizedBox(height: 0),
             // ৬. "দ্রুত টুলস" — কোডে থাকা বাকি স্ক্রিনগুলোতে যাওয়ার শর্টকাট গ্রিড
             Padding(

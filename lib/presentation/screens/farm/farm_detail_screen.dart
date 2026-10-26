@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/app_strings.dart';
+import '../../../core/services/farm_photo_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/utils/date_utils.dart';
@@ -38,7 +39,7 @@ class FarmDetailScreen extends ConsumerWidget {
       body: farmsAsync.when(
         loading: () => const LoadingState(),
         error: (e, _) => ErrorStateView(
-          message: 'খামার লোড করা যায়নি: \$e',
+          message: 'খামার লোড করা যায়নি: $e',
           onRetry: () => ref.invalidate(farmsProvider),
         ),
         data: (farms) {
@@ -103,14 +104,15 @@ class FarmDetailScreen extends ConsumerWidget {
   }
 }
 
-class _Hero extends StatelessWidget {
+class _Hero extends ConsumerWidget {
   const _Hero({required this.farm, required this.cropsCount});
   final Farm farm;
   final int cropsCount;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final tt = Theme.of(context).textTheme;
+    final photo = farm.photoUrl;
     return AppCard(
       padding: const EdgeInsets.all(AppSpacing.lg),
       color: AppColors.primary,
@@ -118,6 +120,44 @@ class _Hero extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(16),
+            child: AspectRatio(
+              aspectRatio: 16 / 9,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  if (photo != null && photo.isNotEmpty)
+                    Image.network(
+                      photo,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, _, _) => const _PhotoFallback(),
+                      loadingBuilder: (_, child, p) =>
+                          p == null ? child : const _PhotoFallback(),
+                    )
+                  else
+                    const _PhotoFallback(),
+                  Positioned(
+                    right: 10,
+                    bottom: 10,
+                    child: FilledButton.icon(
+                      onPressed: () =>
+                          FarmPhotoService.change(context, ref, farm),
+                      icon: const Icon(Icons.add_a_photo_rounded, size: 18),
+                      label: Text(
+                        (photo ?? '').isEmpty ? 'ছবি যোগ করুন' : 'ছবি বদলান',
+                      ),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: Colors.black54,
+                        foregroundColor: Colors.white,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: AppSpacing.md),
           Row(
             children: [
               IconBadge(
@@ -144,18 +184,31 @@ class _Hero extends StatelessWidget {
             spacing: AppSpacing.sm,
             runSpacing: AppSpacing.sm,
             children: [
-              _Pill(text: '\${farm.sizeAcres.toStringAsFixed(1)} \${AppStrings.acres}'),
+              _Pill(text: '${farm.sizeAcres.toStringAsFixed(1)} ${AppStrings.acres}'),
               _Pill(text: farm.soilType.bangla),
-              _Pill(text: '\$cropsCount \${AppStrings.crop}'),
+              _Pill(text: '$cropsCount ${AppStrings.crop}'),
             ],
           ),
           if (farm.ownerName != null && farm.ownerName!.trim().isNotEmpty) ...[
             const SizedBox(height: AppSpacing.md),
-            Text('\${AppStrings.farmOwnerName}: \${farm.ownerName}',
+            Text('${AppStrings.farmOwnerName}: ${farm.ownerName}',
                 style: tt.bodyMedium?.copyWith(color: Colors.white)),
           ],
         ],
       ),
+    );
+  }
+}
+
+class _PhotoFallback extends StatelessWidget {
+  const _PhotoFallback();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: Colors.white12,
+      alignment: Alignment.center,
+      child: const Icon(Icons.landscape_rounded, color: Colors.white38, size: 56),
     );
   }
 }
@@ -205,15 +258,15 @@ class _SoilTestCard extends StatelessWidget {
         statusColor = AppColors.textSecondary;
         statusIcon = Icons.help_outline;
       } else if (daysLeft < 0) {
-        statusText = '\${AppStrings.farmSoilTestOverdue} (\${-daysLeft} দিন আগে)';
+        statusText = '${AppStrings.farmSoilTestOverdue} (${-daysLeft} দিন আগে)';
         statusColor = AppColors.danger;
         statusIcon = Icons.warning_amber_rounded;
       } else if (daysLeft <= 30) {
-        statusText = '\${AppStrings.farmSoilTestDue} (\$daysLeft দিন বাকি)';
+        statusText = '${AppStrings.farmSoilTestDue} ($daysLeft দিন বাকি)';
         statusColor = AppColors.warning;
         statusIcon = Icons.schedule;
       } else {
-        statusText = '\${AppStrings.farmNextSoilTest}: \${AppDate.full(next)} (\$daysLeft দিন বাকি)';
+        statusText = '${AppStrings.farmNextSoilTest}: ${AppDate.full(next)} ($daysLeft দিন বাকি)';
         statusColor = AppColors.success;
         statusIcon = Icons.check_circle_outline;
       }
@@ -308,7 +361,7 @@ class _CropTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final tt = Theme.of(context).textTheme;
     return AppCard(
-      onTap: () => context.push('/farm/crop/\${crop.id}'),
+      onTap: () => context.push('/farm/crop/${crop.id}'),
       child: Row(
         children: [
           IconBadge(
@@ -322,7 +375,7 @@ class _CropTile extends StatelessWidget {
               children: [
                 Text(crop.name, style: tt.titleSmall),
                 Text(
-                  '\${crop.stage.bangla} • \${crop.landSizeAcres.toStringAsFixed(1)} \${AppStrings.acres}',
+                  '${crop.stage.bangla} • ${crop.landSizeAcres.toStringAsFixed(1)} ${AppStrings.acres}',
                   style: tt.bodySmall?.copyWith(color: AppColors.textSecondary),
                 ),
               ],
@@ -368,7 +421,7 @@ class _ExpenseSummary extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('\${AppStrings.expenses} (এই খামার)',
+          Text('${AppStrings.expenses} (এই খামার)',
               style: Theme.of(context).textTheme.titleSmall),
           const SizedBox(height: AppSpacing.sm),
           Text(AppNumber.money(total),

@@ -41,6 +41,20 @@ class FsPaths {
       userDoc(phone).collection('expenses');
   static CollectionReference<Map<String, dynamic>> notifications(String phone) =>
       userDoc(phone).collection('notifications');
+  static CollectionReference<Map<String, dynamic>> profitRecords(String phone) =>
+      userDoc(phone).collection('profit_records');
+  static DocumentReference<Map<String, dynamic>> photoDoc(
+    String phone,
+    String id,
+  ) => userDoc(phone).collection('photos').doc(id);
+  static DocumentReference<Map<String, dynamic>> toolPlanDoc(
+    String phone,
+    String id,
+  ) => userDoc(phone).collection('tool_plans').doc(id);
+  static DocumentReference<Map<String, dynamic>> profitRecordDoc(
+    String phone,
+    String id,
+  ) => profitRecords(phone).doc(id);
 
   static DocumentReference<Map<String, dynamic>> farmDoc(String phone, String id) =>
       farms(phone).doc(id);

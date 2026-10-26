@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:uuid/uuid.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
@@ -8,6 +9,8 @@ import '../../../core/widgets/app_card.dart';
 import '../../../core/widgets/app_text_field.dart';
 import '../../../core/widgets/primary_button.dart';
 import '../../../core/widgets/states.dart';
+import '../../../data/models/tool_plan.dart';
+import '../../providers/app_providers.dart';
 
 /// Fertilizer NPK calculator.
 ///
@@ -30,6 +33,44 @@ class _FertilizerScreenState extends ConsumerState<FertilizerScreen> {
   void dispose() {
     _landCtrl.dispose();
     super.dispose();
+  }
+
+  bool _saving = false;
+
+  Future<void> _savePlan(_Rec rec, double land) async {
+    setState(() => _saving = true);
+    try {
+      final repo = await ref.read(toolPlanRepoProvider.future);
+      await repo.save(
+        ToolPlan(
+          id: const Uuid().v4(),
+          type: ToolPlan.fertilizer,
+          title: 'সার: $_crop',
+          summary: '$_soil • ${land.toStringAsFixed(2)} একর • '
+              'ইউরিয়া ${(rec.urea * land).toStringAsFixed(1)} কেজি, '
+              'টিএসপি ${(rec.tsp * land).toStringAsFixed(1)} কেজি, '
+              'এমওপি ${(rec.mop * land).toStringAsFixed(1)} কেজি',
+          data: {
+            'crop': _crop,
+            'soil': _soil,
+            'landAcres': land,
+            'nKgPerAcre': rec.n,
+            'pKgPerAcre': rec.p,
+            'kKgPerAcre': rec.k,
+            'ureaKg': rec.urea * land,
+            'tspKg': rec.tsp * land,
+            'mopKg': rec.mop * land,
+          },
+          savedAt: DateTime.now(),
+        ),
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('পরামর্শ সংরক্ষিত হয়েছে')),
+      );
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
   }
 
   double _landSize() {
@@ -160,9 +201,9 @@ class _FertilizerScreenState extends ConsumerState<FertilizerScreen> {
           const SizedBox(height: AppSpacing.md),
           PrimaryButton(
             label: 'পরামর্শ সংরক্ষণ করুন',
-            onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('পরামর্শ সংরক্ষিত হয়েছে')),
-            ),
+            icon: Icons.save_outlined,
+            loading: _saving,
+            onPressed: () => _savePlan(rec, land),
           ),
           const SizedBox(height: AppSpacing.lg),
           const _Disclaimer(),

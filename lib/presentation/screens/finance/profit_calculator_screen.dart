@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:uuid/uuid.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
@@ -7,6 +8,7 @@ import '../../../core/theme/app_text_styles.dart';
 import '../../../core/utils/date_utils.dart';
 import '../../../core/widgets/app_card.dart';
 import '../../../core/widgets/app_text_field.dart';
+import '../../../core/widgets/primary_button.dart';
 import '../../../data/models/crop.dart';
 import '../../../data/models/profit_estimate.dart';
 import '../../providers/app_providers.dart';
@@ -50,6 +52,33 @@ class _ProfitCalculatorScreenState
         _yieldController.text = c.estimatedYieldKg!.toStringAsFixed(0);
       }
     });
+  }
+
+  bool _saving = false;
+
+  Future<void> _saveEstimate(ProfitEstimate e) async {
+    setState(() => _saving = true);
+    try {
+      final repo = await ref.read(profitRepoProvider.future);
+      await repo.save(
+        ProfitEstimate(
+          id: const Uuid().v4(),
+          cropName: e.cropName,
+          landSizeAcres: e.landSizeAcres,
+          estimatedProductionKg: e.estimatedProductionKg,
+          sellingPricePerKg: e.sellingPricePerKg,
+          totalCost: e.totalCost,
+          savedAt: DateTime.now(),
+        ),
+      );
+      ref.invalidate(profitRecordsProvider);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('হিসাব সংরক্ষণ করা হয়েছে')),
+      );
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
   }
 
   ProfitEstimate? _buildEstimate() {
@@ -380,7 +409,16 @@ class _ProfitCalculatorScreenState
                         ),
                         const SizedBox(height: AppSpacing.lg),
                         _BreakevenCard(estimate: estimate),
+                        const SizedBox(height: AppSpacing.lg),
+                        PrimaryButton(
+                          label: 'হিসাব সংরক্ষণ করুন',
+                          icon: Icons.save_outlined,
+                          loading: _saving,
+                          onPressed: () => _saveEstimate(estimate),
+                        ),
                       ],
+                      const SizedBox(height: AppSpacing.xl),
+                      const _SavedRecords(),
                     ],
                   ),
                 ),
@@ -813,6 +851,70 @@ class _Row extends StatelessWidget {
           style: AppTextStyles.bodyBold.copyWith(color: valueColor),
         ),
       ]),
+    );
+  }
+}
+/// Previously saved calculations (users/{phone}/profit_records).
+class _SavedRecords extends ConsumerWidget {
+  const _SavedRecords();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final records = ref.watch(profitRecordsProvider).valueOrNull ?? const [];
+    if (records.isEmpty) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _SectionHeader(
+          icon: Icons.history_rounded,
+          title: 'সংরক্ষিত হিসাব',
+          subtitle: 'আগের লাভ-ক্ষতির হিসাব',
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        for (final r in records)
+          Padding(
+            padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+            child: AppCard(
+              color: AppColors.surface,
+              elevation: 1,
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(r.cropName, style: AppTextStyles.h3),
+                        Text(
+                          [
+                            '${r.landSizeAcres} একর',
+                            if (r.savedAt != null) AppDate.full(r.savedAt!),
+                          ].join(' • '),
+                          style: AppTextStyles.bodySecondary,
+                        ),
+                      ],
+                    ),
+                  ),
+                  Text(
+                    '${r.isProfitable ? '+' : ''}${AppNumber.money(r.estimatedProfit)}',
+                    style: AppTextStyles.h3.copyWith(
+                      color: r.isProfitable
+                          ? AppColors.primary
+                          : AppColors.danger,
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.delete_outline_rounded),
+                    onPressed: () async {
+                      final repo = await ref.read(profitRepoProvider.future);
+                      await repo.delete(r.id);
+                      ref.invalidate(profitRecordsProvider);
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
+      ],
     );
   }
 }

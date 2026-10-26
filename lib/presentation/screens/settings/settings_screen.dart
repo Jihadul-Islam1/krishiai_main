@@ -13,6 +13,7 @@ import '../../../core/widgets/screen_header.dart';
 import '../../../core/widgets/section_header.dart';
 import '../../../data/models/subscription.dart';
 import '../../providers/app_providers.dart';
+import '../auth/login_screen.dart' show AuthSession;
 
 /// Top-level settings hub. Surfaces language, account, notification,
 /// subscription, help, privacy, about, and logout destinations on a single
@@ -204,16 +205,8 @@ class SettingsScreen extends ConsumerWidget {
     );
     if (ok != true) return;
     try {
-      final repo = await ref.read(farmerRepoProvider.future);
-      await repo.clear();
-      final prefs = await ref.read(sharedPreferencesProvider.future);
-      await prefs.remove('onboarding_complete');
-      ref.invalidate(currentFarmerProvider);
-      ref.invalidate(farmsProvider);
-      ref.invalidate(cropsProvider);
-      ref.invalidate(onboardingCompleteProvider);
-      ref.invalidate(currentSubscriptionProvider);
-      if (context.mounted) context.go('/onboarding');
+      await AuthSession.signOut(ref);
+      if (context.mounted) context.go('/login');
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

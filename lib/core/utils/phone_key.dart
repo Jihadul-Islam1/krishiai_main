@@ -42,6 +42,10 @@ class PhoneKey {
     return canonical;
   }
 
+  /// Digits-only form of a phone key, safe for use in file names
+  /// (`+8801812345678` -> `8801812345678`).
+  static String folderId(String phone) => phone.replaceAll(RegExp(r'[^0-9]'), '');
+
   /// Same as [fromString] but throws if the input is empty. Use this inside
   /// repository methods that have already established a session.
   static String require(String input) {
