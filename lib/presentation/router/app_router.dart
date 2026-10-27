@@ -132,7 +132,12 @@ GoRouter buildRouter(Ref ref) {
         builder: (_, state) =>
             CropDetailScreen(cropId: state.pathParameters['id']!),
       ),
-      GoRoute(path: '/ai/scan', builder: (_, _) => const CropDoctorScreen()),
+      GoRoute(
+        path: '/ai/scan',
+        builder: (_, state) => CropDoctorScreen(
+          initialCropId: state.uri.queryParameters['crop'],
+        ),
+      ),
       GoRoute(
         path: '/ai/history',
         builder: (_, _) => const ScanHistoryScreen(),
@@ -144,6 +149,7 @@ GoRouter buildRouter(Ref ref) {
           return ScanResultScreen(
             diagnosis: extra['diagnosis'] as Diagnosis,
             imagePath: extra['imagePath'] as String?,
+            fromScan: extra['fromScan'] as bool? ?? false,
           );
         },
       ),

@@ -35,6 +35,8 @@ import '../../core/services/permission_service.dart';
 import '../../core/services/speech_service.dart';
 import '../router/app_router.dart';
 import '../../core/services/remote_image_storage.dart';
+import '../../core/services/rice_disease_classifier.dart';
+import '../../core/network/disease_api_service.dart';
 
 /// Async-initialized dependencies ---------------------------------------------
 
@@ -87,6 +89,22 @@ final cropRepoProvider = FutureProvider<CropRepository>((ref) async {
 
 final diseaseRepoProvider = Provider<DiseaseLibraryRepository>((ref) {
   return DiseaseLibraryRepository();
+});
+
+/// Loaded once on first scan and kept for the app's lifetime (~6 MB model).
+final riceClassifierProvider = FutureProvider<RiceDiseaseClassifier>((
+  ref,
+) async {
+  final classifier = await RiceDiseaseClassifier.load();
+  ref.onDispose(classifier.dispose);
+  return classifier;
+});
+
+/// Online disease server client (potato, tomato, eggplant, maize).
+final diseaseApiProvider = Provider<DiseaseApiService>((ref) {
+  final api = DiseaseApiService();
+  ref.onDispose(api.dispose);
+  return api;
 });
 
 final diagnosisRepoProvider = FutureProvider<DiagnosisRepository>((ref) async {

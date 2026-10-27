@@ -52,4 +52,14 @@ class AppNumber {
   }
 
   static String percent(double value) => '${value.toStringAsFixed(0)}%';
+
+  /// 12 → ১২
+  static String bangla(int value) {
+    const digits = '০১২৩৪৫৬৭৮৯';
+    return value
+        .toString()
+        .split('')
+        .map((c) => c == '-' ? c : digits[int.parse(c)])
+        .join();
+  }
 }

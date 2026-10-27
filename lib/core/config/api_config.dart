@@ -20,13 +20,15 @@ class ApiConfig {
   );
 
   /// How long a `/predict` call may take end-to-end before we abort
-  /// and fall back to the offline library advisor.
-  static const Duration inferenceTimeout = Duration(seconds: 12);
+  /// and tell the farmer the server is slow. Includes uploading the
+  /// photo over a weak rural connection.
+  static const Duration inferenceTimeout = Duration(seconds: 25);
 
-  /// `/predict` accepts multipart `file=<image>`.
+  /// `/predict` accepts multipart `crop=<id>` + `file=<image>`; see
+  /// `ml_backend/api/main.py` for the response contract.
   static const String predictPath = '/predict';
 
-  /// `/health` is used by the doctor screen to surface "backend
-  /// offline" hints before the user picks a photo.
+  /// `/health` tells the doctor screen whether the server is reachable
+  /// and which crops have a model, before the farmer uploads a photo.
   static const String healthPath = '/health';
 }

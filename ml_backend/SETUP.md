@@ -75,34 +75,72 @@ python -m ml_backend.api.main
 # → http://localhost:8000/docs
 ```
 
+### Add a crop model
+
+The app diagnoses **rice on-device**; potato, tomato, eggplant and maize go
+through this server. Put each trained model in its own folder:
+
+```
+ml_backend/models/
+├── tomato/
+│   ├── model.tflite      # or model.keras — the notebook exports both
+│   ├── labels.txt        # one label per line, in model output order
+│   └── meta.json         # optional: rename the notebook's *_model_meta.json
+├── potato/ …
+├── eggplant/ …
+└── maize/ …
+```
+
+`labels.txt` must use the keys the app knows (see
+`lib/data/library/<crop>_disease_info.dart`):
+
+| crop | labels |
+|------|--------|
+| potato | `early_blight`, `late_blight`, `healthy` |
+| tomato | `bacterial_spot`, `early_blight`, `late_blight`, `leaf_mold`, `septoria_leaf_spot`, `spider_mites`, `target_spot`, `yellow_leaf_curl_virus`, `mosaic_virus`, `healthy` |
+| eggplant | `leaf_spot`, `mosaic_virus`, `little_leaf`, `wilt`, `white_mold`, `insect_pest`, `healthy` |
+| maize | `gray_leaf_spot`, `common_rust`, `northern_leaf_blight`, `healthy` |
+
+Add a `not_leaf` class (photos of soil, hands, other plants) so the app can
+say "this isn't a tomato leaf". A label the app doesn't know still works —
+it shows `classes_bn` from `meta.json` with generic advice.
+
+Models take float32 RGB in **0–255** (preprocessing inside the model, as in
+`ml/rice_disease_training.ipynb`). `meta.json` may set
+`confident_threshold` (default 0.5) and `min_threshold` (default 0.4); pick
+them from the notebook's threshold table.
+
+`GET /health` lists which crops have model files, so you can check a new
+model was picked up without restarting the app.
+
 Try it:
 
 ```bash
-curl -F "file=@./test_leaf.jpg" http://localhost:8000/predict
+curl -F "crop=tomato" -F "file=@./test_leaf.jpg" http://localhost:8000/predict
 ```
 
-Expected response shape (abridged):
+Expected response shape:
 
 ```json
 {
-  "model_version": "rice-mobilenetv2-1.0",
+  "crop": "tomato",
+  "model_version": "tomato-mobilenetv3large",
   "inference_ms": 87,
   "top_k": [
-    {"label": "rice_blast", "label_bn": "ধানের ব্লাস্ট (Rice Blast)",
-     "label_en": "Rice Blast", "confidence": 0.92, "severity": "high"},
-    {"label": "rice_brown_spot", "label_bn": "বাদামী দাগ (Brown Spot)",
-     "label_en": "Brown Spot", "confidence": 0.05, "severity": "medium"}
+    {"label": "late_blight", "label_bn": "নাবী ধসা রোগ",
+     "label_en": "Late Blight", "confidence": 0.71, "severity": "medium"},
+    {"label": "early_blight", "label_bn": "আগাম ধসা রোগ",
+     "label_en": "Early Blight", "confidence": 0.12, "severity": "medium"}
   ],
   "is_confident": true,
   "probable": true,
-  "advisory": {
-    "name_bn": "ধানের ব্লাস্ট (Rice Blast)",
-    "severity": "high",
-    "symptoms": ["…"], "causes": ["…"], "management": ["…"], "prevention": ["…"]
-  },
-  "note_bn": "এটি একটি সম্ভাব্য রোগ নির্ণয় …"
+  "advisory": {},
+  "note_bn": "এটি এআই-এর প্রাথমিক পরামর্শ, চূড়ান্ত রোগ নির্ণয় নয়। …"
 }
 ```
+
+Errors the app explains to the farmer: `400` (unknown crop / not an image)
+and `503` (no model for that crop yet → "মডেল এখনো প্রস্তুত নয়").
 
 ## 6. Plug into Flutter
 

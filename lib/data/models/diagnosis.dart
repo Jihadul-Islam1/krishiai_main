@@ -2,6 +2,23 @@
 
 import 'disease.dart';
 
+/// Another class the model considered, shown when the top guess is unsure.
+@immutable
+class DiagnosisCandidate {
+  const DiagnosisCandidate({required this.name, required this.confidence});
+
+  final String name;
+  final double confidence;
+
+  Map<String, dynamic> toJson() => {'name': name, 'confidence': confidence};
+
+  factory DiagnosisCandidate.fromJson(Map<String, dynamic> json) =>
+      DiagnosisCandidate(
+        name: json['name'] as String,
+        confidence: (json['confidence'] as num).toDouble(),
+      );
+}
+
 @immutable
 class Diagnosis {
   const Diagnosis({
@@ -18,6 +35,9 @@ class Diagnosis {
     this.imagePath,
     this.cropId,
     this.notes,
+    this.fertilizer = const [],
+    this.alternatives = const [],
+    this.isConfident,
   });
 
   final String id;
@@ -33,6 +53,12 @@ class Diagnosis {
   final String? imagePath;
   final String? cropId;
   final String? notes;
+  final List<String> fertilizer;
+  final List<DiagnosisCandidate> alternatives;
+
+  /// The model's verdict at scan time (server or on-device thresholds).
+  /// Null for scans saved before this was recorded.
+  final bool? isConfident;
 
   Map<String, dynamic> toJson() => {
     'id': id,
@@ -48,6 +74,9 @@ class Diagnosis {
     'imagePath': imagePath,
     'cropId': cropId,
     'notes': notes,
+    'fertilizer': fertilizer,
+    'alternatives': alternatives.map((a) => a.toJson()).toList(),
+    'isConfident': isConfident,
   };
 
   factory Diagnosis.fromJson(Map<String, dynamic> json) => Diagnosis(
@@ -67,5 +96,11 @@ class Diagnosis {
     imagePath: json['imagePath'] as String?,
     cropId: json['cropId'] as String?,
     notes: json['notes'] as String?,
+    fertilizer: List<String>.from(json['fertilizer'] as List? ?? const []),
+    alternatives: (json['alternatives'] as List? ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .map(DiagnosisCandidate.fromJson)
+        .toList(),
+    isConfident: json['isConfident'] as bool?,
   );
 }

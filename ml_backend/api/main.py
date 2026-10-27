@@ -1,18 +1,30 @@
-"""FastAPI inference server for Krishi AI's rice disease model.
+"""FastAPI inference server for Krishi AI's online crop disease models.
+
+The app diagnoses rice on-device; potato, tomato, eggplant and maize photos
+are sent here so their models don't bloat the APK.
 
 Endpoints
 ---------
-GET  /health       — liveness probe + whether the model is loaded.
-GET  /model-info   — exposes label space, image size, threshold.
-POST /predict      — accepts a multipart `file` (image), returns
-                     top-K predictions with Bangla advice.
+GET  /health   — liveness + which crops have a model on disk (cheap, no TF).
+POST /predict  — multipart `crop` (potato | tomato | eggplant | maize | rice)
+                 + `file` (image). Returns top-K labels and the model's verdict.
+
+Model layout — one folder per crop:
+    models/<crop>/model.tflite    preferred (small, fast)   or  model.keras
+    models/<crop>/labels.txt      one label per line, in model output order
+    models/<crop>/meta.json       optional, e.g. the notebook's *_model_meta.json:
+                                  {"classes_bn": [...], "confident_threshold": 0.5,
+                                   "min_threshold": 0.4, "model": "mobilenetv3large"}
+
+Labels must match the keys in the app's lib/data/library/<crop>_disease_info.dart
+("late_blight", "healthy", ...); add a "not_leaf" class to reject photos that
+aren't a leaf of that crop.
+
+Models take float32 RGB in 0–255 (preprocessing lives inside the model, as in
+ml/rice_disease_training.ipynb) at the size of their input layer.
 
 Run:
-    uvicorn ml_backend.api.main:app --host 0.0.0.0 --port 8000 --reload
-
-The Flutter app's `DiseaseApiService` talks to this server. When the
-backend is unreachable, the Flutter side falls back to its existing
-library-only mock so the demo never breaks.
+    uvicorn ml_backend.api.main:app --host 0.0.0.0 --port 8000
 """
 
 from __future__ import annotations
@@ -21,71 +33,150 @@ import io
 import json
 import logging
 import os
+import threading
 import time
 from pathlib import Path
 
 import numpy as np
-from PIL import Image
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from PIL import Image, ImageOps, UnidentifiedImageError
+from pydantic import BaseModel, Field
 
 try:
     from dotenv import load_dotenv
+
     load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 except Exception:
     pass
 
-from ml_backend.api.advisories import get as get_advisory
-
 LOG = logging.getLogger("krishi-api")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
-# Lazy-loaded globals — see `_ensure_loaded`.
-_MODEL = None
-_LABELS: list[str] = []
-_LABEL_EN: dict[str, str] = {}
-_IMG_SIZE: int = 224
-_THRESHOLD: float = 0.60
-_TOP_K: int = 3
+CROPS = ("potato", "tomato", "eggplant", "maize", "rice")
+MODELS_DIR = Path(os.getenv("MODELS_DIR", str(Path(__file__).resolve().parents[1] / "models")))
+TOP_K = int(os.getenv("TOP_K", "3"))
+DEFAULT_CONFIDENT = float(os.getenv("CONF_THRESHOLD", "0.5"))
+DEFAULT_MIN = float(os.getenv("MIN_THRESHOLD", "0.4"))
 
 
 # ---------------------------------------------------------------------------
-# Schemas
+# Schemas (mirrored by lib/core/network/disease_api_service.dart)
 # ---------------------------------------------------------------------------
 
 
 class Prediction(BaseModel):
-    label: str                # "rice_blast"
-    label_bn: str             # "ধানের ব্লাস্ট"
-    label_en: str             # "Rice Blast"
+    label: str                # "late_blight" — key into the app's advisory map
+    label_bn: str             # "নাবী ধসা রোগ", from meta.json classes_bn
+    label_en: str
     confidence: float         # 0.0 – 1.0
-    severity: str             # low | medium | high
+    severity: str = "medium"  # the app uses its own severity when it knows the label
 
 
 class PredictResponse(BaseModel):
+    crop: str
     model_version: str
     inference_ms: int
     top_k: list[Prediction]
-    is_confident: bool        # True if top-1 >= threshold
-    probable: bool            # True if top-1 >= 0.30 (still worth showing)
-    advisory: dict            # Bangla advice for top-1 label
-    note_bn: str              # Disclaimer appended as Bangla text
-
-
-class ModelInfo(BaseModel):
-    loaded: bool
-    labels: list[str]
-    label_en: dict[str, str]
-    img_size: int
-    threshold: float
-    top_k: int
+    is_confident: bool        # top-1 >= the model's confident_threshold
+    probable: bool            # top-1 >= min_threshold (worth showing as "সম্ভাব্য")
+    advisory: dict = Field(default_factory=dict)
+    note_bn: str
 
 
 class HealthResponse(BaseModel):
     status: str
-    model_loaded: bool
     uptime_s: float
+    crops: dict[str, bool]    # crop -> model files present
+
+
+# ---------------------------------------------------------------------------
+# Models
+# ---------------------------------------------------------------------------
+
+
+class CropModel:
+    """One crop's classifier, loaded once and shared by requests."""
+
+    def __init__(self, crop: str, folder: Path) -> None:
+        import tensorflow as tf  # heavy import, only when a model is needed
+
+        self.crop = crop
+        self.labels = [
+            line.strip()
+            for line in (folder / "labels.txt").read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+        meta_path = folder / "meta.json"
+        meta = json.loads(meta_path.read_text(encoding="utf-8")) if meta_path.exists() else {}
+        names_bn = meta.get("classes_bn") or []
+        self.names_bn = names_bn if len(names_bn) == len(self.labels) else self.labels
+        self.confident = float(meta.get("confident_threshold", DEFAULT_CONFIDENT))
+        self.minimum = float(meta.get("min_threshold", DEFAULT_MIN))
+        self.version = str(meta.get("model_version") or f"{crop}-{meta.get('model', 'model')}")
+
+        self._lock = threading.Lock()
+        tflite_path = folder / "model.tflite"
+        if tflite_path.exists():
+            self._interp = tf.lite.Interpreter(model_path=str(tflite_path))
+            self._interp.allocate_tensors()
+            inp = self._interp.get_input_details()[0]
+            out = self._interp.get_output_details()[0]
+            self._in_index, self._out_index = inp["index"], out["index"]
+            self.size = int(inp["shape"][1])
+            n_out = int(out["shape"][-1])
+            self._keras = None
+        else:
+            self._interp = None
+            self._keras = tf.keras.models.load_model(folder / "model.keras", compile=False)
+            self.size = int(self._keras.input_shape[1])
+            n_out = int(self._keras.output_shape[-1])
+
+        if n_out != len(self.labels):
+            raise ValueError(
+                f"{crop}: model has {n_out} outputs but labels.txt has {len(self.labels)} labels"
+            )
+        LOG.info("%s model ready: %d classes, %dpx, v=%s", crop, n_out, self.size, self.version)
+
+    def predict(self, image: Image.Image) -> np.ndarray:
+        import tensorflow as tf
+
+        # Same bilinear resize as training (tf.image.resize), values stay 0–255.
+        arr = tf.image.resize(
+            np.asarray(image, dtype=np.float32), (self.size, self.size), method="bilinear"
+        ).numpy()[None, ...]
+        if self._interp is not None:
+            with self._lock:  # a TFLite interpreter isn't thread-safe
+                self._interp.set_tensor(self._in_index, arr)
+                self._interp.invoke()
+                return self._interp.get_tensor(self._out_index)[0].copy()
+        return self._keras.predict(arr, verbose=0)[0]
+
+
+_MODELS: dict[str, CropModel] = {}
+_LOAD_LOCK = threading.Lock()
+
+
+def _folder(crop: str) -> Path:
+    return MODELS_DIR / crop
+
+
+def _available(crop: str) -> bool:
+    folder = _folder(crop)
+    has_model = (folder / "model.tflite").exists() or (folder / "model.keras").exists()
+    return has_model and (folder / "labels.txt").exists()
+
+
+def _get_model(crop: str) -> CropModel:
+    model = _MODELS.get(crop)
+    if model is None:
+        with _LOAD_LOCK:
+            model = _MODELS.get(crop)
+            if model is None:
+                LOG.info("loading %s model from %s", crop, _folder(crop))
+                model = _MODELS[crop] = CropModel(crop, _folder(crop))
+    return model
 
 
 # ---------------------------------------------------------------------------
@@ -94,8 +185,8 @@ class HealthResponse(BaseModel):
 
 app = FastAPI(
     title="Krishi AI — Disease Inference API",
-    version="1.0.0",
-    description="Rice leaf disease classifier. Returns top-K predictions with Bangla advisory.",
+    version="2.0.0",
+    description="Per-crop leaf disease classifiers. Returns top-K labels with the model's verdict.",
 )
 
 app.add_middleware(
@@ -108,142 +199,70 @@ app.add_middleware(
 _START_TS = time.time()
 
 
-def _ensure_loaded() -> None:
-    """Lazy-load the trained model and labels file."""
-    global _MODEL, _LABELS, _LABEL_EN, _IMG_SIZE, _THRESHOLD, _TOP_K
-    if _MODEL is not None:
-        return
-
-    import tensorflow as tf  # heavy import
-
-    model_path = Path(os.getenv("MODEL_PATH", "models/rice_disease_mobilenetv2.h5"))
-    labels_path = Path(os.getenv("LABELS_PATH", "models/labels.json"))
-
-    _IMG_SIZE = int(os.getenv("IMG_SIZE", "224"))
-    _THRESHOLD = float(os.getenv("CONF_THRESHOLD", "0.60"))
-    _TOP_K = int(os.getenv("TOP_K", "3"))
-
-    if not model_path.exists() or not labels_path.exists():
-        LOG.warning(
-            "model artefacts missing (%s, %s); running in HEAL_LIGHTWEIGHT mode",
-            model_path,
-            labels_path,
-        )
-        _LABELS = [
-            "rice_healthy",
-            "rice_blast",
-            "rice_brown_spot",
-            "rice_bacterial_leaf_blight",
-            "rice_tungro",
-            "rice_sheath_blight",
-        ]
-        _LABEL_EN = {k: k for k in _LABELS}
-        return
-
-    LOG.info("loading model from %s", model_path)
-    _MODEL = tf.keras.models.load_model(model_path)
-    with labels_path.open(encoding="utf-8") as fh:
-        meta = json.load(fh)
-    _LABELS = meta["labels"]
-    _LABEL_EN = meta.get("label_en", {k: k for k in _LABELS})
-    _IMG_SIZE = meta.get("img_size", _IMG_SIZE)
-    LOG.info("model ready: %d classes, img_size=%d", len(_LABELS), _IMG_SIZE)
-
-
-def _preprocess(raw: bytes) -> np.ndarray:
-    """Decode upload bytes to a (1, H, W, 3) float32 tensor."""
-    img = Image.open(io.BytesIO(raw)).convert("RGB").resize((_IMG_SIZE, _IMG_SIZE))
-    arr = np.asarray(img, dtype=np.float32)
-    arr = np.expand_dims(arr, axis=0)
-    # MobileNetV2 expects [-1, 1] inputs; tf.keras.applications.mobilenet_v2
-    # ships the matching `preprocess_input` we use in the trainer.
-    import tensorflow as tf
-    from tensorflow.keras.applications.mobilenet_v2 import preprocess_input
-    arr = preprocess_input(arr)
-    return arr
-
-
-# ---------------------------------------------------------------------------
-# Routes
-# ---------------------------------------------------------------------------
-
-
 @app.get("/health", response_model=HealthResponse)
 def health() -> HealthResponse:
-    _ensure_loaded()
     return HealthResponse(
         status="ok",
-        model_loaded=_MODEL is not None,
         uptime_s=round(time.time() - _START_TS, 2),
-    )
-
-
-@app.get("/model-info", response_model=ModelInfo)
-def model_info() -> ModelInfo:
-    _ensure_loaded()
-    return ModelInfo(
-        loaded=_MODEL is not None,
-        labels=_LABELS,
-        label_en=_LABEL_EN,
-        img_size=_IMG_SIZE,
-        threshold=_THRESHOLD,
-        top_k=_TOP_K,
+        crops={crop: _available(crop) for crop in CROPS},
     )
 
 
 @app.post("/predict", response_model=PredictResponse)
-async def predict(file: UploadFile = File(...)) -> PredictResponse:
-    _ensure_loaded()
+async def predict(crop: str = Form(...), file: UploadFile = File(...)) -> PredictResponse:
+    crop = crop.strip().lower()
+    if crop not in CROPS:
+        raise HTTPException(status_code=400, detail=f"unknown crop '{crop}', expected one of {CROPS}")
+    if not _available(crop):
+        # The app shows "model not ready yet" for 503.
+        raise HTTPException(status_code=503, detail=f"model for crop '{crop}' is not available")
+
     raw = await file.read()
     if not raw:
         raise HTTPException(status_code=400, detail="empty upload")
+    try:
+        # Phone photos carry their rotation in EXIF.
+        image = ImageOps.exif_transpose(Image.open(io.BytesIO(raw))).convert("RGB")
+    except (UnidentifiedImageError, OSError) as e:
+        raise HTTPException(status_code=400, detail="file is not a readable image") from e
+
+    try:
+        model = await run_in_threadpool(_get_model, crop)
+    except Exception as e:
+        LOG.exception("failed to load %s model", crop)
+        raise HTTPException(status_code=503, detail=f"model for crop '{crop}' failed to load") from e
 
     t0 = time.time()
-    arr = _preprocess(raw)
-
-    if _MODEL is None:
-        # Lightweight fallback so the endpoint never 500s — useful when the
-        # user hasn't run the trainer yet. The probabilities are uniform so
-        # the Flutter UI still shows "uncertain / needs expert review".
-        probs = np.full(len(_LABELS), 1.0 / len(_LABELS), dtype=np.float32)
-    else:
-        probs = _MODEL.predict(arr, verbose=0)[0]
-
-    top_idx = probs.argsort()[::-1][: _TOP_K]
-    top_k = []
-    for i in top_idx:
-        key = _LABELS[int(i)]
-        adv = get_advisory(key)
-        top_k.append(
-            Prediction(
-                label=key,
-                label_bn=adv["name_bn"],
-                label_en=adv.get("name_en") or _LABEL_EN.get(key, key),
-                confidence=float(round(probs[int(i)], 4)),
-                severity=adv["severity"],
-            )
+    probs = await run_in_threadpool(model.predict, image)
+    top_idx = np.argsort(probs)[::-1][:TOP_K]
+    top_k = [
+        Prediction(
+            label=model.labels[i],
+            label_bn=model.names_bn[i],
+            label_en=model.labels[i].replace("_", " ").title(),
+            confidence=round(float(probs[i]), 4),
         )
+        for i in (int(j) for j in top_idx)
+    ]
 
-    top1_conf = top_k[0].confidence if top_k else 0.0
-    is_confident = top1_conf >= _THRESHOLD
-    probable = top1_conf >= 0.30
-
-    advisory = get_advisory(top_k[0].label) if top_k else get_advisory("rice_healthy")
-
+    top1 = top_k[0].confidence
+    is_confident = top1 >= model.confident
+    probable = top1 >= model.minimum
     note_bn = (
-        "এটি একটি সম্ভাব্য রোগ নির্ণয় (AI প্রাথমিক পরামর্শ), চূড়ান্ত নিশ্চিত নয়। "
-        "সঠিক নির্ণয় ও ব্যবস্�াপনার জন্য স্থানীয় কৃষি কর্মকর্তার পরামর্শ নিন।"
+        "এটি এআই-এর প্রাথমিক পরামর্শ, চূড়ান্ত রোগ নির্ণয় নয়। "
+        "সঠিক নির্ণয় ও ব্যবস্থাপনার জন্য স্থানীয় কৃষি কর্মকর্তার পরামর্শ নিন।"
         if is_confident
-        else "AI মডেল যথেষ্ট নিশ্�িত নয়। পরিষ্কার ছবি তুলে আবার চেষ্টা করুন অথবা বিশে�জ্ঞের পরামর্শ নিন।"
+        else "এআই মডেল যথেষ্ট নিশ্চিত নয়। পরিষ্কার ছবি তুলে আবার চেষ্টা করুন "
+        "অথবা বিশেষজ্ঞের পরামর্শ নিন।"
     )
 
     return PredictResponse(
-        model_version="rice-mobilenetv2-1.0",
+        crop=crop,
+        model_version=model.version,
         inference_ms=int((time.time() - t0) * 1000),
         top_k=top_k,
         is_confident=is_confident,
         probable=probable,
-        advisory=advisory,
         note_bn=note_bn,
     )
 
@@ -255,5 +274,4 @@ if __name__ == "__main__":
         "ml_backend.api.main:app",
         host=os.getenv("HOST", "0.0.0.0"),
         port=int(os.getenv("PORT", "8000")),
-        reload=True,
     )

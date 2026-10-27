@@ -1,0 +1,33 @@
+{
+  "model": "mobilenetv3large",
+  "tta": false,
+  "tta_note": "true হলে app-এ ছবি, বাম-ডান উল্টানো, উপর-নিচ উল্টানো তিনবার চালিয়ে probability-র গড় নিন",
+  "input_size": 288,
+  "input_dtype": "float32",
+  "input_range": "0-255 (scale ভেতরে করা আছে, app-এ /255 করবেন না)",
+  "color_order": "RGB",
+  "classes": [
+    "Bacterial Leaf Blight",
+    "Brown Spot",
+    "Healthy Rice Leaf",
+    "Leaf Blast",
+    "Leaf scald",
+    "Narrow Brown Leaf Spot",
+    "Rice Hispa",
+    "Sheath Blight",
+    "not_rice"
+  ],
+  "classes_bn": [
+    "ব্যাকটেরিয়াজনিত পাতা পোড়া",
+    "বাদামী দাগ রোগ",
+    "সুস্থ ধান পাতা",
+    "পাতা ব্লাস্ট রোগ",
+    "পাতা ঝলসানো রোগ",
+    "সরু বাদামী দাগ রোগ",
+    "ধানের হিস্পা পোকা",
+    "খোল ঝলসানো রোগ",
+    "ধান পাতা নয়"
+  ],
+  "test_accuracy": 0.8771,
+  "confidence_note": "উপরের threshold টেবিল দেখে ঠিক করুন; সাধারণত >=0.70 নিশ্চিত, 0.40-0.70 সম্ভাব্য, নিচে অজানা"
+}
