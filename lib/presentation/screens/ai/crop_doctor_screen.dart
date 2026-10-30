@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:ui' show PathMetric;
 
@@ -33,7 +34,7 @@ class CropDoctorScreen extends ConsumerStatefulWidget {
 }
 
 /// Whether the online server can diagnose the selected crop right now.
-enum _ServerState { checking, ready, noModel, unreachable }
+enum _ServerState { checking, waking, ready, noModel, unreachable }
 
 class _CropDoctorScreenState extends ConsumerState<CropDoctorScreen>
     with SingleTickerProviderStateMixin {
@@ -80,10 +81,17 @@ class _CropDoctorScreenState extends ConsumerState<CropDoctorScreen>
       setState(() => _server = _serverStateFor(_crop, _health));
       return;
     }
-    if (_server != _ServerState.checking) {
+    if (_server != _ServerState.checking && _server != _ServerState.waking) {
       setState(() => _server = _ServerState.checking);
     }
+    // free সার্ভার ঘুমিয়ে থাকলে জাগতে প্রায় ১ মিনিট লাগে; ততক্ষণ "জাগছে" দেখানো
+    final slow = Timer(const Duration(seconds: 4), () {
+      if (mounted && _server == _ServerState.checking) {
+        setState(() => _server = _ServerState.waking);
+      }
+    });
     final health = await ref.read(diseaseApiProvider).health();
+    slow.cancel();
     if (!mounted) return;
     _health = health;
     _healthAt = health == null ? null : DateTime.now();
@@ -915,6 +923,7 @@ class _ServerChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final (color, label) = switch (state) {
       _ServerState.checking => (AppColors.textMuted, 'যাচাই হচ্ছে'),
+      _ServerState.waking => (AppColors.warning, 'সার্ভার জাগছে'),
       _ServerState.ready => (AppColors.success, 'সার্ভার চালু'),
       _ServerState.noModel => (AppColors.warning, 'মডেল আসছে'),
       _ServerState.unreachable => (AppColors.danger, 'সংযোগ নেই'),
@@ -932,7 +941,8 @@ class _ServerChip extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (state == _ServerState.checking)
+              if (state == _ServerState.checking ||
+                  state == _ServerState.waking)
                 SizedBox(
                   width: 10,
                   height: 10,

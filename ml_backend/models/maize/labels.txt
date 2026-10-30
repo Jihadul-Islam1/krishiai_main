@@ -1,0 +1,6 @@
+common_rust
+fall_armyworm
+gray_leaf_spot
+healthy
+northern_leaf_blight
+not_leaf

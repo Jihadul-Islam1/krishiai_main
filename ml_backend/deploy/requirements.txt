@@ -1,0 +1,8 @@
+# Server-only dependencies for the deployed API (no training libs).
+# LiteRT runs model.tflite without TensorFlow, so the server fits in 512 MB.
+fastapi==0.138.1
+uvicorn==0.49.0
+python-multipart==0.0.32
+ai-edge-litert==2.3.0
+numpy==2.2.6
+pillow==11.3.0

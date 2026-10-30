@@ -1,0 +1,35 @@
+{
+  "model": "mobilenetv3large",
+  "model_version": "maize-mobilenetv3large",
+  "input_size": 256,
+  "input_dtype": "float32",
+  "input_range": "0-255 (scale ভেতরে করা আছে)",
+  "color_order": "RGB",
+  "classes": [
+    "common_rust",
+    "fall_armyworm",
+    "gray_leaf_spot",
+    "healthy",
+    "northern_leaf_blight",
+    "not_leaf"
+  ],
+  "classes_bn": [
+    "মরিচা রোগ",
+    "ফল আর্মিওয়ার্ম (লেদা পোকা)",
+    "ধূসর পাতার দাগ",
+    "সুস্থ ভুট্টা গাছ",
+    "পাতা ঝলসানো রোগ",
+    "ভুট্টার পাতা নয়"
+  ],
+  "confident_threshold": 0.6,
+  "min_threshold": 0.4,
+  "test_accuracy": 0.9597,
+  "test_accuracy_by_source": {
+    "seasonal": 0.9817,
+    "mlda": 0.9438,
+    "plantvillage": 0.9507,
+    "other_crop": 1.0,
+    "no_leaf": 1.0
+  },
+  "leaf_test_accuracy": 0.9557
+}

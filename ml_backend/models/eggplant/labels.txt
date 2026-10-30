@@ -1,0 +1,8 @@
+healthy
+insect_pest
+leaf_spot
+little_leaf
+mosaic_virus
+not_leaf
+white_mold
+wilt

@@ -99,7 +99,7 @@ ml_backend/models/
 | potato | `early_blight`, `late_blight`, `healthy` |
 | tomato | `bacterial_spot`, `early_blight`, `late_blight`, `leaf_mold`, `septoria_leaf_spot`, `spider_mites`, `target_spot`, `yellow_leaf_curl_virus`, `mosaic_virus`, `healthy` |
 | eggplant | `leaf_spot`, `mosaic_virus`, `little_leaf`, `wilt`, `white_mold`, `insect_pest`, `healthy` |
-| maize | `gray_leaf_spot`, `common_rust`, `northern_leaf_blight`, `healthy` |
+| maize | `gray_leaf_spot`, `common_rust`, `northern_leaf_blight`, `fall_armyworm`, `healthy` |
 
 Add a `not_leaf` class (photos of soil, hands, other plants) so the app can
 say "this isn't a tomato leaf". A label the app doesn't know still works —
@@ -144,13 +144,32 @@ and `503` (no model for that crop yet → "মডেল এখনো প্র�
 
 ## 6. Plug into Flutter
 
-The Flutter app already calls the backend. By default it expects
-`http://10.0.2.2:8000` (Android emulator → host loopback). Override at
-runtime:
+The Flutter app already calls the backend. By default it uses the deployed
+server, `https://krishiai-api-n0rk.onrender.com`. To test against a local
+server instead (`10.0.2.2` is the Android emulator → host loopback; use the
+laptop's LAN IP from a real phone):
 
 ```bash
-flutter run --dart-define=KRISHI_API_BASE_URL=http://192.168.0.42:8000
+flutter run --dart-define=KRISHI_API_BASE_URL=http://10.0.2.2:8000
 ```
+
+### Deploy (HTTPS for real phones)
+
+`ml_backend/deploy/` holds a Dockerfile that runs `model.tflite` with LiteRT
+instead of TensorFlow (~170 MB RAM), so a free 512 MB instance is enough.
+
+```bash
+python ml_backend/deploy/make_deploy.py   # → build/server_deploy/
+```
+
+Push `build/server_deploy/` to its own GitHub repo and create a Docker web
+service from it (e.g. Render, free instance). The container listens on
+`$PORT`. The live service is `https://krishiai-api-n0rk.onrender.com`
+(Render added `-n0rk` because `krishiai-api` was taken); if it moves, update
+`defaultValue` in `lib/core/config/api_config.dart`.
+
+The free instance sleeps after 15 idle minutes and takes up to a minute to
+wake; the app waits up to 90 s and shows "সার্ভার জাগছে" meanwhile.
 
 ## 7. When training fails (offline workshops)
 

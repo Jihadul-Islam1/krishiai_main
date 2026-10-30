@@ -154,7 +154,7 @@ class DiseaseApiService {
     try {
       final r = await _client
           .get(_uri(ApiConfig.healthPath))
-          .timeout(const Duration(seconds: 4));
+          .timeout(ApiConfig.healthTimeout);
       if (r.statusCode < 200 || r.statusCode >= 300) return null;
       final body = json.decode(r.body);
       final crops = body is Map && body['crops'] is Map

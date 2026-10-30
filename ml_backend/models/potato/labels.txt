@@ -1,0 +1,4 @@
+early_blight
+healthy
+late_blight
+not_leaf

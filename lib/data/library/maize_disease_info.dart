@@ -1,8 +1,8 @@
 import '../models/disease.dart';
 import 'crop_disease_info.dart';
 
-/// Maize advisory, keyed by the labels the server's maize model returns
-/// (PlantVillage corn classes). Keep in sync with `labels.txt` on the server.
+/// Maize advisory, keyed by the labels the server's maize model returns.
+/// Keep in sync with `labels.txt` on the server.
 const Map<String, CropDiseaseInfo> maizeDiseaseInfo = {
   'gray_leaf_spot': CropDiseaseInfo(
     nameBn: 'ধূসর পাতার দাগ',
@@ -71,6 +71,31 @@ const Map<String, CropDiseaseInfo> maizeDiseaseInfo = {
       'প্রতিরোধী জাত চাষ করুন',
       'ফসল আবর্তন করুন',
       'ফসল কাটার পর অবশিষ্ট অংশ নষ্ট করুন',
+    ],
+  ),
+  'fall_armyworm': CropDiseaseInfo(
+    nameBn: 'ফল আর্মিওয়ার্ম (লেদা পোকা)',
+    nameEn: 'Fall Armyworm',
+    severity: Severity.high,
+    symptoms: [
+      'কচি পাতায় জানালার মতো স্বচ্ছ দাগ, পরে ছেঁড়া ছেঁড়া বড় ছিদ্র',
+      'গাছের মাথার (ডিগ পাতার) ভেতরে করাতের গুঁড়ার মতো পোকার মল',
+      'মাথায় সবুজ-বাদামি কীড়া, মাথায় উল্টো "Y" দাগ',
+    ],
+    causes: [
+      'ফল আর্মিওয়ার্ম (Spodoptera frugiperda) পোকার কীড়া',
+      'গরম আবহাওয়ায় দ্রুত বংশ বাড়ে, এক খেত থেকে আরেক খেতে উড়ে যায়',
+    ],
+    management: [
+      'ডিমের গাদা ও কীড়া হাতে ধরে মেরে ফেলুন',
+      'আক্রমণ বেশি হলে এমামেকটিন বেনজোয়েট, স্পিনোসাড বা ক্লোরানট্রানিলিপ্রোল গ্রুপের অনুমোদিত কীটনাশক লেবেলের মাত্রায় গাছের মাথার ভেতরে স্প্রে করুন',
+      'সকাল বা বিকেলে স্প্রে করুন, তখন কীড়া বাইরে থাকে',
+    ],
+    fertilizer: ['সুষম সার দিন; অতিরিক্ত ইউরিয়া পাতা নরম করে আক্রমণ বাড়ায়'],
+    prevention: [
+      'চারা গজানোর পর থেকে প্রতি সপ্তাহে গাছের মাথা দেখুন',
+      'খেতে ফেরোমন ফাঁদ দিন',
+      'এলাকার সবাই কাছাকাছি সময়ে বপন করুন',
     ],
   ),
   'healthy': CropDiseaseInfo(

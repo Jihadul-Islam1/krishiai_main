@@ -1,0 +1,24 @@
+{
+  "model": "mobilenetv3large",
+  "model_version": "potato-mobilenetv3large",
+  "input_size": 256,
+  "input_dtype": "float32",
+  "input_range": "0-255 (scale ভেতরে করা আছে)",
+  "color_order": "RGB",
+  "classes": [
+    "early_blight",
+    "healthy",
+    "late_blight",
+    "not_leaf"
+  ],
+  "classes_bn": [
+    "আগাম ধসা রোগ",
+    "সুস্থ আলু গাছ",
+    "নাবী ধসা রোগ (মড়ক)",
+    "আলুর পাতা নয়"
+  ],
+  "confident_threshold": 0.6,
+  "min_threshold": 0.4,
+  "test_accuracy": 0.9909,
+  "pld_test_accuracy": 0.9901
+}

@@ -1,0 +1,37 @@
+{
+  "model": "efficientnetv2b2",
+  "model_version": "tomato-efficientnetv2b2",
+  "input_size": 288,
+  "input_dtype": "float32",
+  "input_range": "0-255 (scale ভেতরে করা আছে)",
+  "color_order": "RGB",
+  "classes": [
+    "bacterial_spot",
+    "early_blight",
+    "healthy",
+    "late_blight",
+    "leaf_mold",
+    "mosaic_virus",
+    "not_leaf",
+    "septoria_leaf_spot",
+    "spider_mites",
+    "target_spot",
+    "yellow_leaf_curl_virus"
+  ],
+  "classes_bn": [
+    "ব্যাকটেরিয়াজনিত দাগ রোগ",
+    "আগাম ধসা রোগ",
+    "সুস্থ টমেটো গাছ",
+    "নাবী ধসা রোগ",
+    "পাতার ছাঁচ রোগ",
+    "মোজাইক ভাইরাস",
+    "টমেটোর পাতা নয়",
+    "সেপ্টোরিয়া পাতার দাগ",
+    "লাল মাকড়",
+    "টার্গেট স্পট",
+    "পাতা কোঁকড়ানো ভাইরাস"
+  ],
+  "confident_threshold": 0.6,
+  "min_threshold": 0.4,
+  "test_accuracy": 0.9914
+}

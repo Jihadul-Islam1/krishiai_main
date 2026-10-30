@@ -96,12 +96,50 @@ class HealthResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+def _tflite_interpreter(path: Path):
+    # LiteRT is the small runtime the deployed server installs (no TensorFlow,
+    # fits a 512 MB instance); a dev machine with TensorFlow works too.
+    try:
+        from ai_edge_litert.interpreter import Interpreter
+    except ImportError:
+        import tensorflow as tf
+
+        Interpreter = tf.lite.Interpreter
+    return Interpreter(model_path=str(path), num_threads=os.cpu_count())
+
+
+def _resize_bilinear(image: np.ndarray, size: int) -> np.ndarray:
+    """`tf.image.resize(image, (size, size), "bilinear")` in numpy.
+
+    Half-pixel centres, no antialiasing — what the training notebooks used.
+    Rows and columns are picked before converting to float, so a large photo
+    never becomes a full-size float array.
+    """
+
+    def taps(n_in: int):
+        x = (np.arange(size, dtype=np.float32) + 0.5) * np.float32(n_in / size) - 0.5
+        lo = np.floor(x)
+        return (
+            np.clip(lo, 0, n_in - 1).astype(np.intp),
+            np.clip(np.ceil(x), 0, n_in - 1).astype(np.intp),
+            x - lo,
+        )
+
+    y0, y1, fy = taps(image.shape[0])
+    x0, x1, fx = taps(image.shape[1])
+
+    def across(rows: np.ndarray) -> np.ndarray:
+        left = rows[:, x0].astype(np.float32)
+        return left + (rows[:, x1].astype(np.float32) - left) * fx[None, :, None]
+
+    top, bottom = across(image[y0]), across(image[y1])
+    return top + (bottom - top) * fy[:, None, None]
+
+
 class CropModel:
     """One crop's classifier, loaded once and shared by requests."""
 
     def __init__(self, crop: str, folder: Path) -> None:
-        import tensorflow as tf  # heavy import, only when a model is needed
-
         self.crop = crop
         self.labels = [
             line.strip()
@@ -119,7 +157,7 @@ class CropModel:
         self._lock = threading.Lock()
         tflite_path = folder / "model.tflite"
         if tflite_path.exists():
-            self._interp = tf.lite.Interpreter(model_path=str(tflite_path))
+            self._interp = _tflite_interpreter(tflite_path)
             self._interp.allocate_tensors()
             inp = self._interp.get_input_details()[0]
             out = self._interp.get_output_details()[0]
@@ -128,6 +166,8 @@ class CropModel:
             n_out = int(out["shape"][-1])
             self._keras = None
         else:
+            import tensorflow as tf  # heavy; only for a model.keras without a .tflite
+
             self._interp = None
             self._keras = tf.keras.models.load_model(folder / "model.keras", compile=False)
             self.size = int(self._keras.input_shape[1])
@@ -140,12 +180,8 @@ class CropModel:
         LOG.info("%s model ready: %d classes, %dpx, v=%s", crop, n_out, self.size, self.version)
 
     def predict(self, image: Image.Image) -> np.ndarray:
-        import tensorflow as tf
-
         # Same bilinear resize as training (tf.image.resize), values stay 0–255.
-        arr = tf.image.resize(
-            np.asarray(image, dtype=np.float32), (self.size, self.size), method="bilinear"
-        ).numpy()[None, ...]
+        arr = _resize_bilinear(np.asarray(image), self.size)[None, ...]
         if self._interp is not None:
             with self._lock:  # a TFLite interpreter isn't thread-safe
                 self._interp.set_tensor(self._in_index, arr)
